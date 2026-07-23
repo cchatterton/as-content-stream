@@ -623,12 +623,13 @@ class AS_Content_Stream {
 		}
 
 		$details = get_blog_details( $blog_id );
-		$languages = $this->get_wpml_languages();
+		$wpml_active = $this->is_wpml_active_on_site();
+		$languages   = $wpml_active ? $this->get_wpml_languages() : array();
 		$result  = array(
 			'blog_id'     => $blog_id,
 			'name'        => $details ? $details->blogname : sprintf( __( 'Site %d', 'as-content-stream' ), $blog_id ),
 			'url'         => get_home_url( $blog_id, '/' ),
-			'wpml_active' => ! empty( $languages ),
+			'wpml_active' => $wpml_active,
 			'languages'   => $languages,
 			'post_types'  => $this->get_post_types(),
 		);
@@ -641,25 +642,44 @@ class AS_Content_Stream {
 	}
 
 	/**
-	 * Get WPML language codes configured for the current switched site.
+	 * Determine whether WPML is active/configured for the current switched site.
+	 *
+	 * @return bool
+	 */
+	private function is_wpml_active_on_site() {
+		$wpml_settings = get_option( 'icl_sitepress_settings', array() );
+
+		if ( ! is_array( $wpml_settings ) || empty( $wpml_settings ) ) {
+			return false;
+		}
+
+		if ( empty( $wpml_settings['setup_complete'] ) ) {
+			return false;
+		}
+
+		return ! empty( $wpml_settings['default_language'] )
+			&& ! empty( $wpml_settings['active_languages'] )
+			&& is_array( $wpml_settings['active_languages'] );
+	}
+
+	/**
+	 * Get WPML language codes configured for the current switched active WPML site.
 	 *
 	 * @return string[]
 	 */
 	private function get_wpml_languages() {
 		$languages = array();
+		$wpml_settings = (array) get_option( 'icl_sitepress_settings', array() );
+
+		if ( isset( $wpml_settings['active_languages'] ) && is_array( $wpml_settings['active_languages'] ) ) {
+			$languages = array_keys( $wpml_settings['active_languages'] );
+		}
 
 		global $wpdb;
 		$table_name = $wpdb->prefix . 'icl_languages';
 
-		if ( $this->table_exists( $table_name ) ) {
+		if ( empty( $languages ) && $this->table_exists( $table_name ) ) {
 			$languages = $wpdb->get_col( "SELECT code FROM {$table_name} WHERE active = 1 ORDER BY code ASC" );
-		}
-
-		if ( empty( $languages ) ) {
-			$wpml_settings = (array) get_option( 'icl_sitepress_settings', array() );
-			if ( isset( $wpml_settings['active_languages'] ) && is_array( $wpml_settings['active_languages'] ) ) {
-				$languages = array_keys( $wpml_settings['active_languages'] );
-			}
 		}
 
 		return array_values( array_unique( array_filter( array_map( 'sanitize_key', $languages ) ) ) );

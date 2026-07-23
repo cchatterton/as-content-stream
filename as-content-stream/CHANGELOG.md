@@ -2,6 +2,11 @@
 
 All notable changes to AS Content Stream are recorded here.
 
+## 0.1.11 - 2026-07-23
+
+- Tightened WPML active detection to require completed site-level WPML configuration.
+- Stopped treating existing WPML language tables alone as an active WPML site.
+
 ## 0.1.10 - 2026-07-23
 
 - Excluded revision and autosave records from queue capture.
