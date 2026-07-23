@@ -1,7 +1,7 @@
 # AS Content Stream
 
 Author: AlphaSys
-Version: 0.1.8
+Version: 0.1.9
 Status: POC
 
 ## Purpose
@@ -16,6 +16,7 @@ AS Content Stream is a network-enabled WordPress plugin scaffold for multisite c
 - Records create, update, and delete content actions in a visible global queue.
 - Captures individual and bulk edits/trash actions on the core source site.
 - Splits queue visibility into Create Queue, Update Queue, and Delete Queue tabs.
+- Keeps Settings and Sites & WPML tabs visible alongside the queue tabs.
 - Supports WordPress-native updates from GitHub releases.
 
 ## Folder Structure

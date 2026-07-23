@@ -170,6 +170,8 @@ class AS_Content_Stream {
 
 		$active_tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'create_queue';
 		$tabs       = array(
+			'settings'     => __( 'Settings', 'as-content-stream' ),
+			'sites'        => __( 'Sites & WPML', 'as-content-stream' ),
 			'create_queue' => __( 'Create Queue', 'as-content-stream' ),
 			'update_queue' => __( 'Update Queue', 'as-content-stream' ),
 			'delete_queue' => __( 'Delete Queue', 'as-content-stream' ),
@@ -198,6 +200,12 @@ class AS_Content_Stream {
 			}
 
 			switch ( $active_tab ) {
+				case 'settings':
+					$this->render_settings_tab();
+					break;
+				case 'sites':
+					$this->render_sites_tab();
+					break;
 				case 'update_queue':
 					$this->render_queue_tab( 'update' );
 					break;
@@ -285,6 +293,41 @@ class AS_Content_Stream {
 				<?php endforeach; ?>
 			</tbody>
 		</table>
+		<?php
+	}
+
+	/**
+	 * Render settings/status.
+	 *
+	 * @return void
+	 */
+	private function render_settings_tab() {
+		$sites        = $this->discover_sites();
+		$queue_counts = $this->get_queue_counts();
+		$wpml_sites   = array_filter(
+			$sites,
+			static function ( $site ) {
+				return $site['wpml_active'];
+			}
+		);
+		?>
+		<div class="as-content-grid">
+			<div class="as-content-panel">
+				<h2><?php esc_html_e( 'Source Site', 'as-content-stream' ); ?></h2>
+				<p><strong><?php esc_html_e( 'Monitoring:', 'as-content-stream' ); ?></strong> <?php echo esc_html( get_bloginfo( 'name' ) ); ?></p>
+				<p><?php esc_html_e( 'Create, update, trash, and delete actions on this core site are queued for later processing.', 'as-content-stream' ); ?></p>
+			</div>
+			<div class="as-content-panel">
+				<h2><?php esc_html_e( 'Network Status', 'as-content-stream' ); ?></h2>
+				<p><strong><?php esc_html_e( 'Sites:', 'as-content-stream' ); ?></strong> <?php echo esc_html( count( $sites ) ); ?></p>
+				<p><strong><?php esc_html_e( 'WPML active sites:', 'as-content-stream' ); ?></strong> <?php echo esc_html( count( $wpml_sites ) ); ?></p>
+				<p><strong><?php esc_html_e( 'Pending queue items:', 'as-content-stream' ); ?></strong> <?php echo esc_html( isset( $queue_counts['pending'] ) ? $queue_counts['pending'] : 0 ); ?></p>
+			</div>
+			<div class="as-content-panel">
+				<h2><?php esc_html_e( 'Last Capture', 'as-content-stream' ); ?></h2>
+				<?php $this->render_capture_status(); ?>
+			</div>
+		</div>
 		<?php
 	}
 

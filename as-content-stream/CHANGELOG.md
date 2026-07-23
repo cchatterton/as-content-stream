@@ -2,6 +2,11 @@
 
 All notable changes to AS Content Stream are recorded here.
 
+## 0.1.9 - 2026-07-23
+
+- Restored Settings and Sites & WPML tabs alongside the three queue tabs.
+- Added source-site and network status details to the Settings tab.
+
 ## 0.1.8 - 2026-07-23
 
 - Renamed the visible core-site admin menu to Content Stream.
