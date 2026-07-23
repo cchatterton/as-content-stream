@@ -1,7 +1,7 @@
 # AS Content Stream
 
 Author: AlphaSys
-Version: 0.1.5
+Version: 0.1.6
 Status: POC
 
 ## Purpose
@@ -38,6 +38,7 @@ as-content-stream/
 - The options page appears only in the core site admin as AS Content Stream.
 - The core site is the monitored source site for content changes.
 - Deleted, archived, and spammed multisite sites are excluded from discovery and queue targets.
+- WPML active status is based on site-level WPML language configuration, not network plugin presence.
 - GitHub releases must include `as-content-stream.zip` as a release asset.
 - Content streaming execution is not implemented yet; this build creates queue records only.
 

@@ -2,6 +2,12 @@
 
 All notable changes to AS Content Stream are recorded here.
 
+## 0.1.6 - 2026-07-23
+
+- Changed WPML active detection to use each site's own language configuration.
+- Removed network-wide WPML plugin presence as a site active signal.
+- Removed the WPML language filter fallback from site discovery to avoid main-site language leakage.
+
 ## 0.1.5 - 2026-07-23
 
 - Added GitHub release updater support for WordPress-native plugin updates.

@@ -644,12 +644,13 @@ class AS_Content_Stream {
 		}
 
 		$details = get_blog_details( $blog_id );
+		$languages = $this->get_wpml_languages();
 		$result  = array(
 			'blog_id'     => $blog_id,
 			'name'        => $details ? $details->blogname : sprintf( __( 'Site %d', 'as-content-stream' ), $blog_id ),
 			'url'         => get_home_url( $blog_id, '/' ),
-			'wpml_active' => $this->is_wpml_active_on_site(),
-			'languages'   => $this->get_wpml_languages(),
+			'wpml_active' => ! empty( $languages ),
+			'languages'   => $languages,
 			'post_types'  => $this->get_post_types(),
 		);
 
@@ -661,23 +662,7 @@ class AS_Content_Stream {
 	}
 
 	/**
-	 * Determine whether WPML appears active for the current site.
-	 *
-	 * @return bool
-	 */
-	private function is_wpml_active_on_site() {
-		$sitewide_plugins = is_multisite() ? array_keys( (array) get_site_option( 'active_sitewide_plugins', array() ) ) : array();
-		$active_plugins   = (array) get_option( 'active_plugins', array() );
-		$wpml_plugin      = 'sitepress-multilingual-cms/sitepress.php';
-
-		return in_array( $wpml_plugin, $active_plugins, true )
-			|| in_array( $wpml_plugin, $sitewide_plugins, true )
-			|| defined( 'ICL_SITEPRESS_VERSION' )
-			|| isset( $GLOBALS['sitepress'] );
-	}
-
-	/**
-	 * Get WPML language codes for current site.
+	 * Get WPML language codes configured for the current switched site.
 	 *
 	 * @return string[]
 	 */
@@ -695,13 +680,6 @@ class AS_Content_Stream {
 			$wpml_settings = (array) get_option( 'icl_sitepress_settings', array() );
 			if ( isset( $wpml_settings['active_languages'] ) && is_array( $wpml_settings['active_languages'] ) ) {
 				$languages = array_keys( $wpml_settings['active_languages'] );
-			}
-		}
-
-		if ( empty( $languages ) && has_filter( 'wpml_active_languages' ) ) {
-			$filtered = apply_filters( 'wpml_active_languages', null, array( 'skip_missing' => 0 ) );
-			if ( is_array( $filtered ) ) {
-				$languages = array_keys( $filtered );
 			}
 		}
 
