@@ -2,6 +2,12 @@
 
 All notable changes to AS Content Stream are recorded here.
 
+## 0.1.15 - 2026-07-23
+
+- Captured trash actions before WordPress mutates slugs with trash suffixes.
+- Added original post name to queue payloads and queue tables.
+- Documented create, update, delete queue processing order.
+
 ## 0.1.14 - 2026-07-23
 
 - Prevented newly-created content from also appearing in the Update Queue while its create action is pending.

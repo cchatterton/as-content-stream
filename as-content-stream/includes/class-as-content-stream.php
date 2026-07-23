@@ -62,7 +62,7 @@ class AS_Content_Stream {
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ) );
 
 		add_action( 'wp_after_insert_post', array( $this, 'capture_after_insert_post' ), 20, 4 );
-		add_action( 'trashed_post', array( $this, 'capture_trash_post' ), 20, 2 );
+		add_action( 'wp_trash_post', array( $this, 'capture_trash_post' ), 20, 2 );
 		add_action( 'before_delete_post', array( $this, 'capture_delete_post' ), 20, 2 );
 	}
 
@@ -252,6 +252,14 @@ class AS_Content_Stream {
 				<h2><?php esc_html_e( 'Last Capture', 'as-content-stream' ); ?></h2>
 				<?php $this->render_capture_status(); ?>
 			</div>
+			<div class="as-content-panel">
+				<h2><?php esc_html_e( 'Processing Order', 'as-content-stream' ); ?></h2>
+				<ol>
+					<li><?php esc_html_e( 'Process Create Queue until clear.', 'as-content-stream' ); ?></li>
+					<li><?php esc_html_e( 'Process Update Queue until clear.', 'as-content-stream' ); ?></li>
+					<li><?php esc_html_e( 'Process Delete Queue until clear.', 'as-content-stream' ); ?></li>
+				</ol>
+			</div>
 		</div>
 		<?php
 	}
@@ -355,13 +363,14 @@ class AS_Content_Stream {
 					<th><?php esc_html_e( 'Source', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Post Title', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Post Name', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Original Post Name', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Post Type', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Inspect', 'as-content-stream' ); ?></th>
 				</tr>
 			</thead>
 			<tbody>
 				<?php if ( empty( $items ) ) : ?>
-					<tr><td colspan="8"><?php esc_html_e( 'No queue items yet.', 'as-content-stream' ); ?></td></tr>
+					<tr><td colspan="9"><?php esc_html_e( 'No queue items yet.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
 				<?php foreach ( $items as $item ) : ?>
 					<?php $payload = $this->decode_queue_payload( $item->payload ); ?>
@@ -372,6 +381,7 @@ class AS_Content_Stream {
 						<td><?php echo esc_html( $this->site_label( (int) $item->source_blog_id ) . ' #' . (int) $item->source_post_id ); ?></td>
 						<td><?php echo esc_html( isset( $payload['post_title'] ) ? $payload['post_title'] : '' ); ?></td>
 						<td><?php echo esc_html( isset( $payload['post_name'] ) ? $payload['post_name'] : '' ); ?></td>
+						<td><?php echo esc_html( isset( $payload['original_post_name'] ) ? $payload['original_post_name'] : '' ); ?></td>
 						<td><?php echo esc_html( $item->post_type ); ?></td>
 						<td>
 							<?php $edit_url = $this->source_edit_url( (int) $item->source_blog_id, (int) $item->source_post_id ); ?>
@@ -430,13 +440,13 @@ class AS_Content_Stream {
 	}
 
 	/**
-	 * Capture trash events, including bulk move-to-trash actions.
+	 * Capture trash events before WordPress mutates the slug.
 	 *
 	 * @param int    $post_id Post ID.
 	 * @param string $previous_status Previous post status.
 	 * @return void
 	 */
-	public function capture_trash_post( $post_id, $previous_status ) {
+	public function capture_trash_post( $post_id, $previous_status = '' ) {
 		if ( ! $this->is_source_site() ) {
 			return;
 		}
@@ -493,6 +503,7 @@ class AS_Content_Stream {
 					'post_title'  => $post->post_title,
 					'post_status' => $post->post_status,
 					'post_name'   => $post->post_name,
+					'original_post_name' => $this->get_original_post_name( $post ),
 				),
 			)
 		);
@@ -667,6 +678,22 @@ class AS_Content_Stream {
 		}
 
 		return $url ? $url : '';
+	}
+
+	/**
+	 * Get the original source slug before WordPress trash suffixes are applied.
+	 *
+	 * @param WP_Post $post Post object.
+	 * @return string
+	 */
+	private function get_original_post_name( $post ) {
+		$desired_slug = get_post_meta( $post->ID, '_wp_desired_post_slug', true );
+
+		if ( is_string( $desired_slug ) && '' !== $desired_slug ) {
+			return $desired_slug;
+		}
+
+		return preg_replace( '/__trashed(?:-\d+)?$/', '', (string) $post->post_name );
 	}
 
 	/**
