@@ -270,12 +270,11 @@ class AS_Content_Stream {
 					<th><?php esc_html_e( 'Site', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'WPML', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Languages', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Post Types', 'as-content-stream' ); ?></th>
 				</tr>
 			</thead>
 			<tbody>
 				<?php if ( empty( $sites ) ) : ?>
-					<tr><td colspan="4"><?php esc_html_e( 'No sites found.', 'as-content-stream' ); ?></td></tr>
+					<tr><td colspan="3"><?php esc_html_e( 'No sites found.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
 				<?php foreach ( $sites as $site ) : ?>
 					<tr>
@@ -289,7 +288,6 @@ class AS_Content_Stream {
 							</span>
 						</td>
 						<td><?php echo esc_html( $this->format_list( $site['languages'] ) ); ?></td>
-						<td><?php echo esc_html( $this->format_list( $site['post_types'] ) ); ?></td>
 					</tr>
 				<?php endforeach; ?>
 			</tbody>
@@ -653,7 +651,7 @@ class AS_Content_Stream {
 		}
 
 		$details = get_blog_details( $blog_id );
-		$wpml_active = $this->is_wpml_active_on_site();
+		$wpml_active = $this->is_wpml_plugin_active_on_site();
 		$languages   = $wpml_active ? $this->get_wpml_languages() : array();
 		$result  = array(
 			'blog_id'     => $blog_id,
@@ -661,7 +659,6 @@ class AS_Content_Stream {
 			'url'         => get_home_url( $blog_id, '/' ),
 			'wpml_active' => $wpml_active,
 			'languages'   => $languages,
-			'post_types'  => $this->get_post_types(),
 		);
 
 		if ( $restore ) {
@@ -672,24 +669,16 @@ class AS_Content_Stream {
 	}
 
 	/**
-	 * Determine whether WPML is active/configured for the current switched site.
+	 * Determine whether the WPML plugin is active for the current switched site.
 	 *
 	 * @return bool
 	 */
-	private function is_wpml_active_on_site() {
-		$wpml_settings = get_option( 'icl_sitepress_settings', array() );
+	private function is_wpml_plugin_active_on_site() {
+		$wpml_plugin      = 'sitepress-multilingual-cms/sitepress.php';
+		$active_plugins   = (array) get_option( 'active_plugins', array() );
+		$sitewide_plugins = is_multisite() ? (array) get_site_option( 'active_sitewide_plugins', array() ) : array();
 
-		if ( ! is_array( $wpml_settings ) || empty( $wpml_settings ) ) {
-			return false;
-		}
-
-		if ( empty( $wpml_settings['setup_complete'] ) ) {
-			return false;
-		}
-
-		return ! empty( $wpml_settings['default_language'] )
-			&& ! empty( $wpml_settings['active_languages'] )
-			&& is_array( $wpml_settings['active_languages'] );
+		return in_array( $wpml_plugin, $active_plugins, true ) || isset( $sitewide_plugins[ $wpml_plugin ] );
 	}
 
 	/**
@@ -702,7 +691,7 @@ class AS_Content_Stream {
 		$wpml_settings = (array) get_option( 'icl_sitepress_settings', array() );
 
 		if ( isset( $wpml_settings['active_languages'] ) && is_array( $wpml_settings['active_languages'] ) ) {
-			$languages = array_keys( $wpml_settings['active_languages'] );
+			$languages = $this->normalize_wpml_language_codes( $wpml_settings['active_languages'] );
 		}
 
 		global $wpdb;
@@ -716,39 +705,41 @@ class AS_Content_Stream {
 	}
 
 	/**
-	 * Get registered content post types for the current site.
+	 * Normalize WPML active language data to language codes.
 	 *
 	 * @return string[]
 	 */
-	private function get_post_types() {
-		$post_types = get_post_types( array(), 'names' );
-		$excluded   = array(
-			'attachment',
-			'revision',
-			'nav_menu_item',
-			'custom_css',
-			'customize_changeset',
-			'oembed_cache',
-			'user_request',
-			'wp_block',
-			'wp_template',
-			'wp_template_part',
-			'wp_global_styles',
-			'wp_navigation',
-		);
-		$results    = array();
+	private function normalize_wpml_language_codes( $active_languages ) {
+		$languages = array();
 
-		foreach ( $post_types as $post_type ) {
-			if ( in_array( $post_type, $excluded, true ) ) {
+		foreach ( $active_languages as $key => $language ) {
+			if ( is_string( $key ) && ! is_numeric( $key ) ) {
+				$languages[] = $key;
 				continue;
 			}
 
-			$results[] = $post_type;
+			if ( is_array( $language ) ) {
+				if ( ! empty( $language['code'] ) ) {
+					$languages[] = $language['code'];
+				} elseif ( ! empty( $language['language_code'] ) ) {
+					$languages[] = $language['language_code'];
+				} elseif ( ! empty( $language['default_locale'] ) ) {
+					$languages[] = substr( (string) $language['default_locale'], 0, 2 );
+				}
+			} elseif ( is_object( $language ) ) {
+				if ( ! empty( $language->code ) ) {
+					$languages[] = $language->code;
+				} elseif ( ! empty( $language->language_code ) ) {
+					$languages[] = $language->language_code;
+				} elseif ( ! empty( $language->default_locale ) ) {
+					$languages[] = substr( (string) $language->default_locale, 0, 2 );
+				}
+			} elseif ( is_string( $language ) && ! is_numeric( $language ) ) {
+				$languages[] = $language;
+			}
 		}
 
-		sort( $results );
-
-		return $results;
+		return $languages;
 	}
 
 	/**

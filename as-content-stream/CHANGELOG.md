@@ -2,6 +2,12 @@
 
 All notable changes to AS Content Stream are recorded here.
 
+## 0.1.13 - 2026-07-23
+
+- Fixed WPML language display when active language settings are stored as numeric arrays.
+- Changed WPML status to reflect live plugin activation rather than historical WPML settings.
+- Removed the post type list from the Sites & WPML tab.
+
 ## 0.1.12 - 2026-07-23
 
 - Added pending queue de-duplication for repeated save hooks on the same source post/action/post type.
