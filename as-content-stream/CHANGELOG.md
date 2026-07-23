@@ -2,6 +2,12 @@
 
 All notable changes to AS Content Stream are recorded here.
 
+## 0.1.16 - 2026-07-23
+
+- Excluded the core source site from the Sites & WPML destination list.
+- Restored the target language setting on the Settings tab.
+- Kept target language storage separate from queue capture guardrails.
+
 ## 0.1.15 - 2026-07-23
 
 - Captured trash actions before WordPress mutates slugs with trash suffixes.

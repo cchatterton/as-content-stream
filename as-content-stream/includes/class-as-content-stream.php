@@ -13,7 +13,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  * AS Content Stream bootstrap, admin UI, site discovery, and queue capture.
  */
 class AS_Content_Stream {
+	const OPTION_TARGET_LANGUAGE = 'as_content_stream_target_language';
 	const OPTION_CAPTURE_STATUS  = 'as_content_stream_capture_status';
+	const NONCE_SETTINGS         = 'as_content_stream_settings';
 	const NONCE_QUEUE            = 'as_content_stream_queue';
 	const PAGE_SLUG              = 'as-content-stream';
 
@@ -58,6 +60,7 @@ class AS_Content_Stream {
 	 */
 	private function __construct() {
 		add_action( 'admin_menu', array( $this, 'register_core_site_menu' ) );
+		add_action( 'admin_post_as_content_stream_save_settings', array( $this, 'save_settings' ) );
 		add_action( 'admin_post_as_content_stream_clear_queue', array( $this, 'clear_queue' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ) );
 
@@ -311,6 +314,7 @@ class AS_Content_Stream {
 	private function render_settings_tab() {
 		$sites        = $this->discover_sites();
 		$queue_counts = $this->get_queue_counts();
+		$target_language = $this->get_target_language();
 		$wpml_sites   = array_filter(
 			$sites,
 			static function ( $site ) {
@@ -323,6 +327,16 @@ class AS_Content_Stream {
 				<h2><?php esc_html_e( 'Source Site', 'as-content-stream' ); ?></h2>
 				<p><strong><?php esc_html_e( 'Monitoring:', 'as-content-stream' ); ?></strong> <?php echo esc_html( get_bloginfo( 'name' ) ); ?></p>
 				<p><?php esc_html_e( 'Create, update, trash, and delete actions on this core site are queued for later processing.', 'as-content-stream' ); ?></p>
+			</div>
+			<div class="as-content-panel">
+				<h2><?php esc_html_e( 'Target Language', 'as-content-stream' ); ?></h2>
+				<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_save_settings' ) ); ?>">
+					<?php wp_nonce_field( self::NONCE_SETTINGS ); ?>
+					<label class="screen-reader-text" for="as-content-target-language"><?php esc_html_e( 'Target language', 'as-content-stream' ); ?></label>
+					<input id="as-content-target-language" class="regular-text" name="target_language" type="text" value="<?php echo esc_attr( $target_language ); ?>" placeholder="<?php esc_attr_e( 'Example: fr, de, es', 'as-content-stream' ); ?>">
+					<p class="description"><?php esc_html_e( 'Stored for future processing. Queue capture does not currently depend on this value.', 'as-content-stream' ); ?></p>
+					<?php submit_button( __( 'Save Settings', 'as-content-stream' ), 'primary', 'submit', false ); ?>
+				</form>
 			</div>
 			<div class="as-content-panel">
 				<h2><?php esc_html_e( 'Network Status', 'as-content-stream' ); ?></h2>
@@ -396,6 +410,25 @@ class AS_Content_Stream {
 			</tbody>
 		</table>
 		<?php
+	}
+
+	/**
+	 * Save settings.
+	 *
+	 * @return void
+	 */
+	public function save_settings() {
+		if ( ! is_multisite() || ! is_main_site() || ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You do not have permission to update AS Content Stream.', 'as-content-stream' ) );
+		}
+
+		check_admin_referer( self::NONCE_SETTINGS );
+
+		$target_language = isset( $_POST['target_language'] ) ? sanitize_key( wp_unslash( $_POST['target_language'] ) ) : '';
+		update_site_option( self::OPTION_TARGET_LANGUAGE, $target_language );
+
+		wp_safe_redirect( $this->admin_url( array( 'tab' => 'settings', 'updated' => 1 ) ) );
+		exit;
 	}
 
 	/**
@@ -717,6 +750,10 @@ class AS_Content_Stream {
 		$results = array();
 
 		foreach ( $sites as $site ) {
+			if ( (int) $site->blog_id === (int) get_main_site_id() ) {
+				continue;
+			}
+
 			$results[] = $this->inspect_site( (int) $site->blog_id );
 		}
 
@@ -891,6 +928,15 @@ class AS_Content_Stream {
 		}
 
 		return implode( ', ', $parts );
+	}
+
+	/**
+	 * Get target language.
+	 *
+	 * @return string
+	 */
+	private function get_target_language() {
+		return sanitize_key( (string) get_site_option( self::OPTION_TARGET_LANGUAGE, '' ) );
 	}
 
 	/**
