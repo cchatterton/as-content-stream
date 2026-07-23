@@ -3,7 +3,7 @@
  * Plugin Name: AS Content Stream
  * Plugin URI: https://github.com/cchatterton/as-content-stream/releases/latest
  * Description: Network content stream queue and WPML capability discovery for AlphaSys multisite networks.
- * Version: 0.1.13
+ * Version: 0.1.14
  * Requires at least: 6.0
  * Requires PHP: 7.4
  * Author: AlphaSys
@@ -18,7 +18,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'AS_CONTENT_STREAM_VERSION', '0.1.13' );
+define( 'AS_CONTENT_STREAM_VERSION', '0.1.14' );
 define( 'AS_CONTENT_STREAM_FILE', __FILE__ );
 define( 'AS_CONTENT_STREAM_DIR', plugin_dir_path( __FILE__ ) );
 define( 'AS_CONTENT_STREAM_URL', plugin_dir_url( __FILE__ ) );

@@ -519,13 +519,23 @@ class AS_Content_Stream {
 		self::create_queue_table();
 
 		$payload = wp_json_encode( $item['payload'] );
+		$action  = sanitize_key( $item['action'] );
+
+		if ( 'update' === $action && $this->pending_source_action_exists( $item, 'create' ) ) {
+			return;
+		}
+
+		if ( 'delete' === $action ) {
+			$this->delete_pending_source_actions( $item, array( 'create', 'update' ) );
+		}
+
 		$existing_id = $wpdb->get_var(
 			$wpdb->prepare(
 				'SELECT id FROM ' . self::queue_table_name() . ' WHERE status = %s AND source_blog_id = %d AND source_post_id = %d AND action = %s AND post_type = %s AND target_blog_id = %d LIMIT 1',
 				'pending',
 				absint( $item['source_blog_id'] ),
 				absint( $item['source_post_id'] ),
-				sanitize_key( $item['action'] ),
+				$action,
 				sanitize_key( $item['post_type'] ),
 				absint( $item['target_blog_id'] )
 			)
@@ -551,7 +561,7 @@ class AS_Content_Stream {
 			self::queue_table_name(),
 			array(
 				'created_at'      => current_time( 'mysql', true ),
-				'action'          => sanitize_key( $item['action'] ),
+				'action'          => $action,
 				'status'          => 'pending',
 				'source_blog_id'  => absint( $item['source_blog_id'] ),
 				'source_post_id'  => absint( $item['source_post_id'] ),
@@ -562,6 +572,55 @@ class AS_Content_Stream {
 			),
 			array( '%s', '%s', '%s', '%d', '%d', '%d', '%s', '%s', '%s' )
 		);
+	}
+
+	/**
+	 * Check whether a matching pending action already exists.
+	 *
+	 * @param array<string,mixed> $item Queue item.
+	 * @param string              $action Action to check.
+	 * @return bool
+	 */
+	private function pending_source_action_exists( $item, $action ) {
+		global $wpdb;
+
+		return (bool) $wpdb->get_var(
+			$wpdb->prepare(
+				'SELECT id FROM ' . self::queue_table_name() . ' WHERE status = %s AND source_blog_id = %d AND source_post_id = %d AND action = %s AND post_type = %s AND target_blog_id = %d LIMIT 1',
+				'pending',
+				absint( $item['source_blog_id'] ),
+				absint( $item['source_post_id'] ),
+				sanitize_key( $action ),
+				sanitize_key( $item['post_type'] ),
+				absint( $item['target_blog_id'] )
+			)
+		);
+	}
+
+	/**
+	 * Delete matching pending actions.
+	 *
+	 * @param array<string,mixed> $item Queue item.
+	 * @param string[]            $actions Actions to delete.
+	 * @return void
+	 */
+	private function delete_pending_source_actions( $item, $actions ) {
+		global $wpdb;
+
+		foreach ( $actions as $action ) {
+			$wpdb->delete(
+				self::queue_table_name(),
+				array(
+					'status'         => 'pending',
+					'source_blog_id' => absint( $item['source_blog_id'] ),
+					'source_post_id' => absint( $item['source_post_id'] ),
+					'action'         => sanitize_key( $action ),
+					'post_type'      => sanitize_key( $item['post_type'] ),
+					'target_blog_id' => absint( $item['target_blog_id'] ),
+				),
+				array( '%s', '%d', '%d', '%s', '%s', '%d' )
+			);
+		}
 	}
 
 	/**

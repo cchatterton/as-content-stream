@@ -2,6 +2,11 @@
 
 All notable changes to AS Content Stream are recorded here.
 
+## 0.1.14 - 2026-07-23
+
+- Prevented newly-created content from also appearing in the Update Queue while its create action is pending.
+- Delete actions now remove stale pending create/update rows for the same source post.
+
 ## 0.1.13 - 2026-07-23
 
 - Fixed WPML language display when active language settings are stored as numeric arrays.
