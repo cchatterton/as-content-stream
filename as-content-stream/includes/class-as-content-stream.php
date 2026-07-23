@@ -13,9 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
  * AS Content Stream bootstrap, admin UI, site discovery, and queue capture.
  */
 class AS_Content_Stream {
-	const OPTION_TARGET_LANGUAGE = 'as_content_stream_target_language';
 	const OPTION_CAPTURE_STATUS  = 'as_content_stream_capture_status';
-	const NONCE_SETTINGS         = 'as_content_stream_settings';
 	const NONCE_QUEUE            = 'as_content_stream_queue';
 	const PAGE_SLUG              = 'as-content-stream';
 
@@ -60,7 +58,6 @@ class AS_Content_Stream {
 	 */
 	private function __construct() {
 		add_action( 'admin_menu', array( $this, 'register_core_site_menu' ) );
-		add_action( 'admin_post_as_content_stream_save_settings', array( $this, 'save_settings' ) );
 		add_action( 'admin_post_as_content_stream_clear_queue', array( $this, 'clear_queue' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ) );
 
@@ -127,7 +124,7 @@ class AS_Content_Stream {
 
 		add_menu_page(
 			__( 'AS Content Stream', 'as-content-stream' ),
-			__( 'AS Content Stream', 'as-content-stream' ),
+			__( 'Content Stream', 'as-content-stream' ),
 			'manage_options',
 			self::PAGE_SLUG,
 			array( $this, 'render_admin_page' ),
@@ -171,16 +168,15 @@ class AS_Content_Stream {
 
 		self::create_queue_table();
 
-		$active_tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'overview';
+		$active_tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'create_queue';
 		$tabs       = array(
-			'overview' => __( 'Overview', 'as-content-stream' ),
-			'sites'    => __( 'Sites & WPML', 'as-content-stream' ),
-			'settings' => __( 'Settings', 'as-content-stream' ),
-			'queue'    => __( 'Queue', 'as-content-stream' ),
+			'create_queue' => __( 'Create Queue', 'as-content-stream' ),
+			'update_queue' => __( 'Update Queue', 'as-content-stream' ),
+			'delete_queue' => __( 'Delete Queue', 'as-content-stream' ),
 		);
 
 		if ( ! isset( $tabs[ $active_tab ] ) ) {
-			$active_tab = 'overview';
+			$active_tab = 'create_queue';
 		}
 
 		?>
@@ -202,17 +198,14 @@ class AS_Content_Stream {
 			}
 
 			switch ( $active_tab ) {
-				case 'sites':
-					$this->render_sites_tab();
+				case 'update_queue':
+					$this->render_queue_tab( 'update' );
 					break;
-				case 'settings':
-					$this->render_settings_tab();
-					break;
-				case 'queue':
-					$this->render_queue_tab();
+				case 'delete_queue':
+					$this->render_queue_tab( 'delete' );
 					break;
 				default:
-					$this->render_overview_tab();
+					$this->render_queue_tab( 'create' );
 					break;
 			}
 			?>
@@ -226,7 +219,6 @@ class AS_Content_Stream {
 	 * @return void
 	 */
 	private function render_overview_tab() {
-		$target_language = $this->get_target_language();
 		$sites           = $this->discover_sites();
 		$wpml_sites      = array_filter(
 			$sites,
@@ -239,13 +231,12 @@ class AS_Content_Stream {
 		<div class="as-content-grid">
 			<div class="as-content-panel">
 				<h2><?php esc_html_e( 'Network Readiness', 'as-content-stream' ); ?></h2>
-				<p><strong><?php esc_html_e( 'Target language:', 'as-content-stream' ); ?></strong> <?php echo esc_html( $target_language ? $target_language : __( 'Not set', 'as-content-stream' ) ); ?></p>
 				<p><strong><?php esc_html_e( 'WPML sites:', 'as-content-stream' ); ?></strong> <?php echo esc_html( count( $wpml_sites ) ); ?> / <?php echo esc_html( count( $sites ) ); ?></p>
 				<p><strong><?php esc_html_e( 'Pending queue items:', 'as-content-stream' ); ?></strong> <?php echo esc_html( isset( $queue_counts['pending'] ) ? $queue_counts['pending'] : 0 ); ?></p>
 			</div>
 			<div class="as-content-panel">
 				<h2><?php esc_html_e( 'Current Scope', 'as-content-stream' ); ?></h2>
-				<p><?php esc_html_e( 'This build discovers WPML-enabled sites, stores the target language, and records content create, update, and delete actions in the queue.', 'as-content-stream' ); ?></p>
+				<p><?php esc_html_e( 'This build records core-site content create, update, and delete actions in the queue.', 'as-content-stream' ); ?></p>
 				<p><?php esc_html_e( 'Actual content streaming is intentionally not executed yet.', 'as-content-stream' ); ?></p>
 			</div>
 			<div class="as-content-panel">
@@ -298,38 +289,12 @@ class AS_Content_Stream {
 	}
 
 	/**
-	 * Render settings form.
-	 *
-	 * @return void
-	 */
-	private function render_settings_tab() {
-		$target_language = $this->get_target_language();
-		?>
-		<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_save_settings' ) ); ?>" class="as-content-form">
-			<?php wp_nonce_field( self::NONCE_SETTINGS ); ?>
-			<table class="form-table" role="presentation">
-				<tr>
-					<th scope="row">
-						<label for="as-content-target-language"><?php esc_html_e( 'Target language', 'as-content-stream' ); ?></label>
-					</th>
-					<td>
-						<input id="as-content-target-language" class="regular-text" name="target_language" type="text" value="<?php echo esc_attr( $target_language ); ?>" placeholder="<?php esc_attr_e( 'Example: fr, de, es', 'as-content-stream' ); ?>">
-						<p class="description"><?php esc_html_e( 'Queue items are created for destination sites that have WPML active, support this language, and register the source post type.', 'as-content-stream' ); ?></p>
-					</td>
-				</tr>
-			</table>
-			<?php submit_button( __( 'Save Settings', 'as-content-stream' ) ); ?>
-		</form>
-		<?php
-	}
-
-	/**
 	 * Render queue.
 	 *
 	 * @return void
 	 */
-	private function render_queue_tab() {
-		$items  = $this->get_queue_items();
+	private function render_queue_tab( $action ) {
+		$items  = $this->get_queue_items( $action );
 		$counts = $this->get_queue_counts();
 		?>
 		<div class="as-content-queue-actions">
@@ -346,14 +311,12 @@ class AS_Content_Stream {
 					<th><?php esc_html_e( 'Action', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Status', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Source', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Destination', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Post Type', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Language', 'as-content-stream' ); ?></th>
 				</tr>
 			</thead>
 			<tbody>
 				<?php if ( empty( $items ) ) : ?>
-					<tr><td colspan="7"><?php esc_html_e( 'No queue items yet.', 'as-content-stream' ); ?></td></tr>
+					<tr><td colspan="5"><?php esc_html_e( 'No queue items yet.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
 				<?php foreach ( $items as $item ) : ?>
 					<tr>
@@ -361,33 +324,12 @@ class AS_Content_Stream {
 						<td><?php echo esc_html( ucfirst( $item->action ) ); ?></td>
 						<td><?php echo esc_html( ucfirst( $item->status ) ); ?></td>
 						<td><?php echo esc_html( $this->site_label( (int) $item->source_blog_id ) . ' #' . (int) $item->source_post_id ); ?></td>
-						<td><?php echo esc_html( $this->site_label( (int) $item->target_blog_id ) ); ?></td>
 						<td><?php echo esc_html( $item->post_type ); ?></td>
-						<td><?php echo esc_html( $item->target_language ); ?></td>
 					</tr>
 				<?php endforeach; ?>
 			</tbody>
 		</table>
 		<?php
-	}
-
-	/**
-	 * Save target language.
-	 *
-	 * @return void
-	 */
-	public function save_settings() {
-		if ( ! is_multisite() || ! is_main_site() || ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'You do not have permission to update AS Content Stream.', 'as-content-stream' ) );
-		}
-
-		check_admin_referer( self::NONCE_SETTINGS );
-
-		$target_language = isset( $_POST['target_language'] ) ? sanitize_key( wp_unslash( $_POST['target_language'] ) ) : '';
-		update_site_option( self::OPTION_TARGET_LANGUAGE, $target_language );
-
-		wp_safe_redirect( $this->admin_url( array( 'tab' => 'settings', 'updated' => 1 ) ) );
-		exit;
 	}
 
 	/**
@@ -405,7 +347,7 @@ class AS_Content_Stream {
 		global $wpdb;
 		$wpdb->delete( self::queue_table_name(), array( 'status' => 'pending' ), array( '%s' ) );
 
-		wp_safe_redirect( $this->admin_url( array( 'tab' => 'queue', 'queue_cleared' => 1 ) ) );
+		wp_safe_redirect( $this->admin_url( array( 'tab' => 'create_queue', 'queue_cleared' => 1 ) ) );
 		exit;
 	}
 
@@ -423,12 +365,12 @@ class AS_Content_Stream {
 			return;
 		}
 
-		if ( ! $post instanceof WP_Post || 'trash' === $post->post_status || $this->should_skip_post( $post_id, $post ) ) {
+		if ( ! $post instanceof WP_Post || 'trash' === $post->post_status ) {
 			return;
 		}
 
 		$action = ( $update && $post_before instanceof WP_Post && 'auto-draft' !== $post_before->post_status ) ? 'update' : 'create';
-		$this->enqueue_for_targets( $action, get_current_blog_id(), $post_id, $post->post_type, $post );
+		$this->enqueue_source_action( $action, get_current_blog_id(), $post_id, $post->post_type, $post );
 	}
 
 	/**
@@ -444,11 +386,11 @@ class AS_Content_Stream {
 		}
 
 		$post = get_post( $post_id );
-		if ( ! $post instanceof WP_Post || $this->should_skip_post( $post_id, $post ) ) {
+		if ( ! $post instanceof WP_Post ) {
 			return;
 		}
 
-		$this->enqueue_for_targets( 'delete', get_current_blog_id(), $post_id, $post->post_type, $post );
+		$this->enqueue_source_action( 'delete', get_current_blog_id(), $post_id, $post->post_type, $post );
 	}
 
 	/**
@@ -459,15 +401,15 @@ class AS_Content_Stream {
 	 * @return void
 	 */
 	public function capture_delete_post( $post_id, $post ) {
-		if ( ! $this->is_source_site() || ! $post instanceof WP_Post || $this->should_skip_post( $post_id, $post ) ) {
+		if ( ! $this->is_source_site() || ! $post instanceof WP_Post ) {
 			return;
 		}
 
-		$this->enqueue_for_targets( 'delete', get_current_blog_id(), $post_id, $post->post_type, $post );
+		$this->enqueue_source_action( 'delete', get_current_blog_id(), $post_id, $post->post_type, $post );
 	}
 
 	/**
-	 * Queue matching target work.
+	 * Queue source-site work for later processing.
 	 *
 	 * @param string  $action Action name.
 	 * @param int     $source_blog_id Source site ID.
@@ -476,50 +418,32 @@ class AS_Content_Stream {
 	 * @param WP_Post $post Post object.
 	 * @return void
 	 */
-	private function enqueue_for_targets( $action, $source_blog_id, $source_post_id, $post_type, $post ) {
-		$target_language = $this->get_target_language();
-		if ( '' === $target_language || isset( $this->queue_locks[ $source_post_id ] ) ) {
-			if ( '' === $target_language ) {
-				$this->store_capture_status( 'skipped', __( 'No target language is set.', 'as-content-stream' ), $source_post_id, $post );
-			}
+	private function enqueue_source_action( $action, $source_blog_id, $source_post_id, $post_type, $post ) {
+		if ( isset( $this->queue_locks[ $source_post_id ] ) ) {
 			return;
 		}
 
 		$this->queue_locks[ $source_post_id ] = true;
 
-		$targets = $this->get_matching_target_sites( $source_blog_id, $post_type, $target_language );
-
-		if ( empty( $targets ) ) {
-			$this->store_capture_status( 'skipped', __( 'No destination site matched the target language and post type.', 'as-content-stream' ), $source_post_id, $post );
-			unset( $this->queue_locks[ $source_post_id ] );
-			return;
-		}
-
-		foreach ( $targets as $target_blog_id ) {
-			$this->insert_queue_item(
-				array(
-					'action'          => $action,
-					'source_blog_id'  => $source_blog_id,
-					'source_post_id'  => $source_post_id,
-					'target_blog_id'  => $target_blog_id,
-					'target_language' => $target_language,
-					'post_type'       => $post_type,
-					'payload'         => array(
-						'post_title'  => $post->post_title,
-						'post_status' => $post->post_status,
-						'post_name'   => $post->post_name,
-					),
-				)
-			);
-		}
+		$this->insert_queue_item(
+			array(
+				'action'          => $action,
+				'source_blog_id'  => $source_blog_id,
+				'source_post_id'  => $source_post_id,
+				'target_blog_id'  => 0,
+				'target_language' => '',
+				'post_type'       => $post_type,
+				'payload'         => array(
+					'post_title'  => $post->post_title,
+					'post_status' => $post->post_status,
+					'post_name'   => $post->post_name,
+				),
+			)
+		);
 
 		$this->store_capture_status(
 			'queued',
-			sprintf(
-				/* translators: %d: queued item count. */
-				_n( 'Queued %d destination action.', 'Queued %d destination actions.', count( $targets ), 'as-content-stream' ),
-				count( $targets )
-			),
+			__( 'Queued source-site content action.', 'as-content-stream' ),
 			$source_post_id,
 			$post
 		);
@@ -553,54 +477,6 @@ class AS_Content_Stream {
 			),
 			array( '%s', '%s', '%s', '%d', '%d', '%d', '%s', '%s', '%s' )
 		);
-	}
-
-	/**
-	 * Determine whether a post should not be queued.
-	 *
-	 * @param int     $post_id Post ID.
-	 * @param WP_Post $post Post object.
-	 * @return bool
-	 */
-	private function should_skip_post( $post_id, $post ) {
-		if ( wp_is_post_revision( $post_id ) || wp_is_post_autosave( $post_id ) ) {
-			return true;
-		}
-
-		if ( 'auto-draft' === $post->post_status || 'revision' === $post->post_type ) {
-			return true;
-		}
-
-		return ! post_type_exists( $post->post_type );
-	}
-
-	/**
-	 * Get destination sites that match target rules.
-	 *
-	 * @param int    $source_blog_id Source blog ID.
-	 * @param string $post_type Post type.
-	 * @param string $target_language Target language.
-	 * @return int[]
-	 */
-	private function get_matching_target_sites( $source_blog_id, $post_type, $target_language ) {
-		$matches = array();
-		$sites   = $this->discover_sites();
-
-		foreach ( $sites as $site ) {
-			if ( (int) $site['blog_id'] === (int) $source_blog_id ) {
-				continue;
-			}
-
-			if ( ! $site['wpml_active'] || ! in_array( $target_language, $site['languages'], true ) ) {
-				continue;
-			}
-
-			if ( in_array( $post_type, $site['post_types'], true ) ) {
-				$matches[] = (int) $site['blog_id'];
-			}
-		}
-
-		return $matches;
 	}
 
 	/**
@@ -739,10 +615,15 @@ class AS_Content_Stream {
 	 *
 	 * @return array<int,object>
 	 */
-	private function get_queue_items() {
+	private function get_queue_items( $action ) {
 		global $wpdb;
 
-		return $wpdb->get_results( "SELECT * FROM " . self::queue_table_name() . ' ORDER BY id DESC LIMIT 100' );
+		return $wpdb->get_results(
+			$wpdb->prepare(
+				'SELECT * FROM ' . self::queue_table_name() . ' WHERE action = %s ORDER BY id DESC LIMIT 100',
+				$action
+			)
+		);
 	}
 
 	/**
@@ -780,15 +661,6 @@ class AS_Content_Stream {
 		}
 
 		return implode( ', ', $parts );
-	}
-
-	/**
-	 * Get target language.
-	 *
-	 * @return string
-	 */
-	private function get_target_language() {
-		return sanitize_key( (string) get_site_option( self::OPTION_TARGET_LANGUAGE, '' ) );
 	}
 
 	/**

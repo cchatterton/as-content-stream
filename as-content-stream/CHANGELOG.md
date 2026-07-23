@@ -2,6 +2,17 @@
 
 All notable changes to AS Content Stream are recorded here.
 
+## 0.1.8 - 2026-07-23
+
+- Renamed the visible core-site admin menu to Content Stream.
+- Removed stale target-language wording from the simplified queue flow.
+
+## 0.1.7 - 2026-07-23
+
+- Simplified queue capture so main-site create, update, and delete events always create queue rows.
+- Removed target language, WPML, destination site, and post type matching from queue capture.
+- Replaced the single queue tab with Create Queue, Update Queue, and Delete Queue tabs.
+
 ## 0.1.6 - 2026-07-23
 
 - Changed WPML active detection to use each site's own language configuration.
