@@ -94,6 +94,7 @@ class AS_Content_Stream {
 			PRIMARY KEY  (id),
 			KEY status (status),
 			KEY source_post (source_blog_id, source_post_id),
+			KEY pending_source_action (status, source_blog_id, source_post_id, action, post_type),
 			KEY target_blog (target_blog_id),
 			KEY action_post_type (action, post_type)
 		) {$charset_collate};";
@@ -519,6 +520,35 @@ class AS_Content_Stream {
 
 		self::create_queue_table();
 
+		$payload = wp_json_encode( $item['payload'] );
+		$existing_id = $wpdb->get_var(
+			$wpdb->prepare(
+				'SELECT id FROM ' . self::queue_table_name() . ' WHERE status = %s AND source_blog_id = %d AND source_post_id = %d AND action = %s AND post_type = %s AND target_blog_id = %d LIMIT 1',
+				'pending',
+				absint( $item['source_blog_id'] ),
+				absint( $item['source_post_id'] ),
+				sanitize_key( $item['action'] ),
+				sanitize_key( $item['post_type'] ),
+				absint( $item['target_blog_id'] )
+			)
+		);
+
+		if ( $existing_id ) {
+			$wpdb->update(
+				self::queue_table_name(),
+				array(
+					'created_at'      => current_time( 'mysql', true ),
+					'target_language' => sanitize_key( $item['target_language'] ),
+					'payload'         => $payload,
+					'last_error'      => null,
+				),
+				array( 'id' => absint( $existing_id ) ),
+				array( '%s', '%s', '%s', '%s' ),
+				array( '%d' )
+			);
+			return;
+		}
+
 		$wpdb->insert(
 			self::queue_table_name(),
 			array(
@@ -530,7 +560,7 @@ class AS_Content_Stream {
 				'target_blog_id'  => absint( $item['target_blog_id'] ),
 				'target_language' => sanitize_key( $item['target_language'] ),
 				'post_type'       => sanitize_key( $item['post_type'] ),
-				'payload'         => wp_json_encode( $item['payload'] ),
+				'payload'         => $payload,
 			),
 			array( '%s', '%s', '%s', '%d', '%d', '%d', '%s', '%s', '%s' )
 		);

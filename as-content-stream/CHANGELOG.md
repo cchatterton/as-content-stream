@@ -2,6 +2,11 @@
 
 All notable changes to AS Content Stream are recorded here.
 
+## 0.1.12 - 2026-07-23
+
+- Added pending queue de-duplication for repeated save hooks on the same source post/action/post type.
+- Existing pending queue rows now refresh their timestamp and payload instead of inserting duplicates.
+
 ## 0.1.11 - 2026-07-23
 
 - Tightened WPML active detection to require completed site-level WPML configuration.
