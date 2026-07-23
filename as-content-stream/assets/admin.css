@@ -1,0 +1,59 @@
+.as-content-stream .nav-tab-wrapper {
+	margin-bottom: 18px;
+}
+
+.as-content-grid {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+	gap: 16px;
+	max-width: 980px;
+}
+
+.as-content-panel {
+	background: #fff;
+	border: 1px solid #dcdcde;
+	border-radius: 4px;
+	padding: 16px;
+}
+
+.as-content-panel h2 {
+	margin-top: 0;
+}
+
+.as-status {
+	display: inline-block;
+	font-weight: 600;
+}
+
+.as-status-yes {
+	color: #008a20;
+}
+
+.as-status-no {
+	color: #8c8f94;
+}
+
+.as-content-sites td,
+.as-content-queue td {
+	vertical-align: top;
+}
+
+.as-content-queue-actions {
+	align-items: center;
+	display: flex;
+	gap: 16px;
+	justify-content: space-between;
+	margin: 0 0 12px;
+	max-width: 980px;
+}
+
+.as-content-form {
+	max-width: 840px;
+}
+
+@media screen and (max-width: 782px) {
+	.as-content-queue-actions {
+		align-items: flex-start;
+		flex-direction: column;
+	}
+}
