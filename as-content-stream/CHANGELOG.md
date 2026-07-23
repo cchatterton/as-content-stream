@@ -2,6 +2,11 @@
 
 All notable changes to AS Content Stream are recorded here.
 
+## 0.1.10 - 2026-07-23
+
+- Excluded revision and autosave records from queue capture.
+- Added post title, post name, and source edit links to queue tables.
+
 ## 0.1.9 - 2026-07-23
 
 - Restored Settings and Sites & WPML tabs alongside the three queue tabs.

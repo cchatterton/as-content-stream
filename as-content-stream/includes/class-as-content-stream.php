@@ -354,20 +354,34 @@ class AS_Content_Stream {
 					<th><?php esc_html_e( 'Action', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Status', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Source', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Post Title', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Post Name', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Post Type', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Inspect', 'as-content-stream' ); ?></th>
 				</tr>
 			</thead>
 			<tbody>
 				<?php if ( empty( $items ) ) : ?>
-					<tr><td colspan="5"><?php esc_html_e( 'No queue items yet.', 'as-content-stream' ); ?></td></tr>
+					<tr><td colspan="8"><?php esc_html_e( 'No queue items yet.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
 				<?php foreach ( $items as $item ) : ?>
+					<?php $payload = $this->decode_queue_payload( $item->payload ); ?>
 					<tr>
 						<td><?php echo esc_html( $item->created_at ); ?></td>
 						<td><?php echo esc_html( ucfirst( $item->action ) ); ?></td>
 						<td><?php echo esc_html( ucfirst( $item->status ) ); ?></td>
 						<td><?php echo esc_html( $this->site_label( (int) $item->source_blog_id ) . ' #' . (int) $item->source_post_id ); ?></td>
+						<td><?php echo esc_html( isset( $payload['post_title'] ) ? $payload['post_title'] : '' ); ?></td>
+						<td><?php echo esc_html( isset( $payload['post_name'] ) ? $payload['post_name'] : '' ); ?></td>
 						<td><?php echo esc_html( $item->post_type ); ?></td>
+						<td>
+							<?php $edit_url = $this->source_edit_url( (int) $item->source_blog_id, (int) $item->source_post_id ); ?>
+							<?php if ( $edit_url ) : ?>
+								<a href="<?php echo esc_url( $edit_url ); ?>"><?php esc_html_e( 'Edit', 'as-content-stream' ); ?></a>
+							<?php else : ?>
+								<?php echo esc_html( '-' ); ?>
+							<?php endif; ?>
+						</td>
 					</tr>
 				<?php endforeach; ?>
 			</tbody>
@@ -408,7 +422,7 @@ class AS_Content_Stream {
 			return;
 		}
 
-		if ( ! $post instanceof WP_Post || 'trash' === $post->post_status ) {
+		if ( ! $post instanceof WP_Post || 'trash' === $post->post_status || $this->is_revision_or_autosave( $post_id, $post ) ) {
 			return;
 		}
 
@@ -429,7 +443,7 @@ class AS_Content_Stream {
 		}
 
 		$post = get_post( $post_id );
-		if ( ! $post instanceof WP_Post ) {
+		if ( ! $post instanceof WP_Post || $this->is_revision_or_autosave( $post_id, $post ) ) {
 			return;
 		}
 
@@ -444,7 +458,7 @@ class AS_Content_Stream {
 	 * @return void
 	 */
 	public function capture_delete_post( $post_id, $post ) {
-		if ( ! $this->is_source_site() || ! $post instanceof WP_Post ) {
+		if ( ! $this->is_source_site() || ! $post instanceof WP_Post || $this->is_revision_or_autosave( $post_id, $post ) ) {
 			return;
 		}
 
@@ -520,6 +534,52 @@ class AS_Content_Stream {
 			),
 			array( '%s', '%s', '%s', '%d', '%d', '%d', '%s', '%s', '%s' )
 		);
+	}
+
+	/**
+	 * Determine whether the row is a revision or autosave.
+	 *
+	 * @param int     $post_id Post ID.
+	 * @param WP_Post $post Post object.
+	 * @return bool
+	 */
+	private function is_revision_or_autosave( $post_id, $post ) {
+		return 'revision' === $post->post_type || wp_is_post_revision( $post_id ) || wp_is_post_autosave( $post_id );
+	}
+
+	/**
+	 * Decode queue JSON payload.
+	 *
+	 * @param string|null $payload Payload JSON.
+	 * @return array<string,string>
+	 */
+	private function decode_queue_payload( $payload ) {
+		$decoded = json_decode( (string) $payload, true );
+
+		return is_array( $decoded ) ? $decoded : array();
+	}
+
+	/**
+	 * Get edit URL for a source post.
+	 *
+	 * @param int $blog_id Blog ID.
+	 * @param int $post_id Post ID.
+	 * @return string
+	 */
+	private function source_edit_url( $blog_id, $post_id ) {
+		$restore = is_multisite() && get_current_blog_id() !== $blog_id;
+
+		if ( $restore ) {
+			switch_to_blog( $blog_id );
+		}
+
+		$url = get_edit_post_link( $post_id, 'raw' );
+
+		if ( $restore ) {
+			restore_current_blog();
+		}
+
+		return $url ? $url : '';
 	}
 
 	/**
