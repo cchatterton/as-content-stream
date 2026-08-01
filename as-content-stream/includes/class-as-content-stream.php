@@ -555,12 +555,16 @@ class AS_Content_Stream {
 			</div>
 			<div class="as-content-panel">
 				<h2><?php esc_html_e( 'Network Status', 'as-content-stream' ); ?></h2>
-				<p><strong><?php esc_html_e( 'Sites:', 'as-content-stream' ); ?></strong> <?php echo esc_html( count( $sites ) ); ?></p>
-				<p><strong><?php esc_html_e( 'WPML active sites:', 'as-content-stream' ); ?></strong> <?php echo esc_html( count( $wpml_sites ) ); ?></p>
-				<p><strong><?php esc_html_e( 'Discovery:', 'as-content-stream' ); ?></strong> <?php echo esc_html( isset( $queue_action_counts['discover'] ) ? $queue_action_counts['discover'] : 0 ); ?></p>
-				<p><strong><?php esc_html_e( 'Create:', 'as-content-stream' ); ?></strong> <?php echo esc_html( isset( $queue_action_counts['create'] ) ? $queue_action_counts['create'] : 0 ); ?> · <strong><?php esc_html_e( 'Update:', 'as-content-stream' ); ?></strong> <?php echo esc_html( isset( $queue_action_counts['update'] ) ? $queue_action_counts['update'] : 0 ); ?> · <strong><?php esc_html_e( 'Delete:', 'as-content-stream' ); ?></strong> <?php echo esc_html( isset( $queue_action_counts['delete'] ) ? $queue_action_counts['delete'] : 0 ); ?></p>
-				<p><strong><?php esc_html_e( 'Processing:', 'as-content-stream' ); ?></strong> <?php echo esc_html( $this->format_counts( $processing_counts ) ); ?></p>
-				<p><strong><?php esc_html_e( 'Streamed Content:', 'as-content-stream' ); ?></strong> <?php echo esc_html( $streamed_count ); ?> · <strong><?php esc_html_e( 'Log:', 'as-content-stream' ); ?></strong> <?php echo esc_html( $log_count ); ?></p>
+				<table class="as-content-metric-table">
+					<tbody>
+						<tr><th scope="row"><?php esc_html_e( 'Sites', 'as-content-stream' ); ?></th><td><?php echo esc_html( count( $sites ) ); ?></td></tr>
+						<tr><th scope="row"><?php esc_html_e( 'WPML active sites', 'as-content-stream' ); ?></th><td><?php echo esc_html( count( $wpml_sites ) ); ?></td></tr>
+						<tr><th scope="row"><?php esc_html_e( 'Discovery', 'as-content-stream' ); ?></th><td><?php echo esc_html( isset( $queue_action_counts['discover'] ) ? $queue_action_counts['discover'] : 0 ); ?></td></tr>
+						<tr><th scope="row"><?php esc_html_e( 'Create / Update / Delete', 'as-content-stream' ); ?></th><td><?php echo esc_html( sprintf( '%1$d / %2$d / %3$d', isset( $queue_action_counts['create'] ) ? $queue_action_counts['create'] : 0, isset( $queue_action_counts['update'] ) ? $queue_action_counts['update'] : 0, isset( $queue_action_counts['delete'] ) ? $queue_action_counts['delete'] : 0 ) ); ?></td></tr>
+						<tr><th scope="row"><?php esc_html_e( 'Processing', 'as-content-stream' ); ?></th><td><?php echo esc_html( $this->format_counts( $processing_counts ) ); ?></td></tr>
+						<tr><th scope="row"><?php esc_html_e( 'Streamed Content / Log', 'as-content-stream' ); ?></th><td><?php echo esc_html( sprintf( '%1$d / %2$d', $streamed_count, $log_count ) ); ?></td></tr>
+					</tbody>
+				</table>
 				<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_rerun_discovery' ) ); ?>">
 					<?php wp_nonce_field( self::NONCE_QUEUE ); ?>
 					<?php submit_button( __( 'Re-run Discovery', 'as-content-stream' ), 'secondary', 'submit', false ); ?>
@@ -569,6 +573,23 @@ class AS_Content_Stream {
 			<div class="as-content-panel">
 				<h2><?php esc_html_e( 'Heartbeat', 'as-content-stream' ); ?></h2>
 				<div id="as-content-heartbeat" data-nonce="<?php echo esc_attr( wp_create_nonce( self::NONCE_HEARTBEAT ) ); ?>">
+					<table class="as-content-metric-table">
+						<tbody>
+							<tr><th scope="row"><?php esc_html_e( 'Next check', 'as-content-stream' ); ?></th><td><span data-as-heartbeat="next_check"><?php echo esc_html( $heartbeat['next_check_seconds'] ); ?></span> <?php esc_html_e( 'sec', 'as-content-stream' ); ?></td></tr>
+							<tr><th scope="row"><?php esc_html_e( 'In progress / Pending', 'as-content-stream' ); ?></th><td><span data-as-heartbeat="parent_in_progress"><?php echo esc_html( $heartbeat['parent_in_progress'] ); ?></span> / <span data-as-heartbeat="parent_pending"><?php echo esc_html( $heartbeat['parent_pending'] ); ?></span></td></tr>
+						</tbody>
+					</table>
+					<div class="as-content-progress" aria-hidden="true">
+						<span data-as-heartbeat-bar="parent" style="width: <?php echo esc_attr( $heartbeat['parent_pressure_percent'] ); ?>%;"></span>
+					</div>
+					<table class="as-content-metric-table">
+						<tbody>
+							<tr><th scope="row"><?php esc_html_e( 'Queued / Blocked', 'as-content-stream' ); ?></th><td><span data-as-heartbeat="child_queued"><?php echo esc_html( $heartbeat['child_queued'] ); ?></span> / <span data-as-heartbeat="child_blocked"><?php echo esc_html( $heartbeat['child_blocked'] ); ?></span></td></tr>
+						</tbody>
+					</table>
+					<div class="as-content-progress as-content-progress-danger" aria-hidden="true">
+						<span data-as-heartbeat-bar="child" style="width: <?php echo esc_attr( $heartbeat['child_blocked_percent'] ); ?>%;"></span>
+					</div>
 					<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_save_settings' ) ); ?>">
 						<?php wp_nonce_field( self::NONCE_SETTINGS ); ?>
 						<input type="hidden" name="settings_context" value="processing">
@@ -579,15 +600,6 @@ class AS_Content_Stream {
 						</label>
 						<?php submit_button( __( 'Save Mode', 'as-content-stream' ), 'primary', 'submit', false ); ?>
 					</form>
-					<p><strong><?php esc_html_e( 'Next check:', 'as-content-stream' ); ?></strong> <span data-as-heartbeat="next_check"><?php echo esc_html( $heartbeat['next_check_seconds'] ); ?></span> <?php esc_html_e( 'seconds', 'as-content-stream' ); ?></p>
-					<p><strong><?php esc_html_e( 'Parent Queue:', 'as-content-stream' ); ?></strong> <span data-as-heartbeat="parent_in_progress"><?php echo esc_html( $heartbeat['parent_in_progress'] ); ?></span> <?php esc_html_e( 'in progress', 'as-content-stream' ); ?> / <span data-as-heartbeat="parent_pending"><?php echo esc_html( $heartbeat['parent_pending'] ); ?></span> <?php esc_html_e( 'pending', 'as-content-stream' ); ?></p>
-					<div class="as-content-progress" aria-hidden="true">
-						<span data-as-heartbeat-bar="parent" style="width: <?php echo esc_attr( $heartbeat['parent_pressure_percent'] ); ?>%;"></span>
-					</div>
-					<p><strong><?php esc_html_e( 'Child Queue:', 'as-content-stream' ); ?></strong> <span data-as-heartbeat="child_queued"><?php echo esc_html( $heartbeat['child_queued'] ); ?></span> <?php esc_html_e( 'queued', 'as-content-stream' ); ?> / <span data-as-heartbeat="child_blocked"><?php echo esc_html( $heartbeat['child_blocked'] ); ?></span> <?php esc_html_e( 'blocked', 'as-content-stream' ); ?></p>
-					<div class="as-content-progress as-content-progress-danger" aria-hidden="true">
-						<span data-as-heartbeat-bar="child" style="width: <?php echo esc_attr( $heartbeat['child_blocked_percent'] ); ?>%;"></span>
-					</div>
 				</div>
 			</div>
 		</div>
@@ -721,22 +733,29 @@ class AS_Content_Stream {
 				<?php submit_button( __( 'Re-run Discovery', 'as-content-stream' ), 'secondary', 'submit', false ); ?>
 			</form>
 		</div>
-		<div class="as-content-grid as-content-discovery-grid">
-			<?php if ( empty( $stats ) ) : ?>
-				<div class="as-content-panel">
-					<h2><?php esc_html_e( 'Discovery', 'as-content-stream' ); ?></h2>
-					<p><?php esc_html_e( 'All published source content is mapped for the active target sites.', 'as-content-stream' ); ?></p>
-				</div>
-			<?php endif; ?>
-			<?php foreach ( $stats as $stat ) : ?>
-				<div class="as-content-panel">
-					<h2><?php echo esc_html( $stat['post_type'] ); ?></h2>
-					<p><strong><?php esc_html_e( 'Published in Core:', 'as-content-stream' ); ?></strong> <?php echo esc_html( (int) $stat['published'] ); ?></p>
-					<p><strong><?php esc_html_e( 'Mapped:', 'as-content-stream' ); ?></strong> <?php echo esc_html( (int) $stat['mapped'] ); ?></p>
-					<p><strong><?php esc_html_e( 'Unmapped:', 'as-content-stream' ); ?></strong> <?php echo esc_html( (int) $stat['unmapped'] ); ?></p>
-				</div>
-			<?php endforeach; ?>
-		</div>
+		<table class="widefat striped as-content-queue as-content-discovery-stats">
+			<thead>
+				<tr>
+					<th><?php esc_html_e( 'Post Type', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Published in Core', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Mapped', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Unmapped', 'as-content-stream' ); ?></th>
+				</tr>
+			</thead>
+			<tbody>
+				<?php if ( empty( $stats ) ) : ?>
+					<tr><td colspan="4"><?php esc_html_e( 'All published source content is mapped for the active target sites.', 'as-content-stream' ); ?></td></tr>
+				<?php endif; ?>
+				<?php foreach ( $stats as $stat ) : ?>
+					<tr>
+						<td><strong><?php echo esc_html( $stat['post_type'] ); ?></strong></td>
+						<td><?php echo esc_html( (int) $stat['published'] ); ?></td>
+						<td><?php echo esc_html( (int) $stat['mapped'] ); ?></td>
+						<td><?php echo esc_html( (int) $stat['unmapped'] ); ?></td>
+					</tr>
+				<?php endforeach; ?>
+			</tbody>
+		</table>
 		<?php
 		$this->render_queue_tab( 'discover', 1000 );
 	}

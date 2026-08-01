@@ -1,7 +1,7 @@
 # Content Stream
 
 Author: AlphaSys
-Version: 0.1.40
+Version: 0.1.41
 Status: POC
 
 ## Purpose
@@ -15,12 +15,12 @@ Content Stream is a network-enabled WordPress plugin scaffold for multisite cont
 - Records create, update, and delete content actions in a visible global queue.
 - Captures individual and bulk edits/trash actions on the core source site.
 - Splits queue visibility into Create Queue, Update Queue, and Delete Queue tabs.
-- Shows a temporary Discovery Queue tab when published source content is not fully mapped.
+- Shows a temporary Discovery Queue tab with compact stats when published source content is not fully mapped.
 - Limits Discovery to public post types currently registered on the core site.
 - Provides a manual Re-run Discovery button to clear and rebuild Discovery queue rows.
 - Runs Discovery only on plugin activation or a manual Re-run Discovery click.
 - Shows all-tab queue summary counts in Network Status.
-- Shows live parent and child queue pressure in Heartbeat.
+- Shows live queue status and processing blockage in Heartbeat.
 - Keeps Settings and Sites & WPML tabs visible alongside the queue tabs.
 - Shows post title, post name, and an edit link in queue rows.
 - De-duplicates pending queue rows for the same source post/action/post type.

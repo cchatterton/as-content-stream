@@ -2,9 +2,16 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.41 - 2026-08-01
+
+- Replaced Discovery post-type stat tiles with a compact table.
+- Tightened Settings tile spacing while keeping tile actions anchored bottom-left.
+- Changed Network Status and Heartbeat metrics to compact borderless tables with right-aligned values.
+- Simplified Heartbeat labels to the existing queue states.
+
 ## 0.1.40 - 2026-08-01
 
-- Replaced the Heartbeat batch fraction with live parent queue and child processing queue pressure metrics.
+- Replaced the Heartbeat batch fraction with live queue and processing pressure metrics.
 - Added all-tab summary counts to the Network Status tile.
 - Removed the target language explanatory line from Settings.
 - Aligned tile action buttons to the bottom-left of their panels.
