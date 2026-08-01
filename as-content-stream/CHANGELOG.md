@@ -2,6 +2,12 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.47 - 2026-08-01
+
+- Renamed the visible Streamed Content tab and Settings summary row to Streaming Map.
+- Removed the latest-100 cap from the Streaming Map tab so all mapping rows are shown.
+- Changed already-mapped create processing jobs to complete successfully and unblock dependent Discovery jobs.
+
 ## 0.1.46 - 2026-08-01
 
 - Refreshed every Settings dashboard tile from the heartbeat AJAX call once per second.

@@ -1,7 +1,7 @@
 # Content Stream
 
 Author: AlphaSys
-Version: 0.1.46
+Version: 0.1.47
 Status: POC
 
 ## Purpose
@@ -37,7 +37,7 @@ Content Stream is a network-enabled WordPress plugin scaffold for multisite cont
 - Keeps failed processing jobs out of Log and available for retry in Processing Queue.
 - Copies source post content and postmeta to destination posts with SQL.
 - Adds manual Run and Delete controls to every item in the Processing Queue.
-- Tracks source/destination relationships in a dedicated links table with an interactive Streamed Content tab.
+- Tracks source/destination relationships in a dedicated links table with an interactive Streaming Map tab.
 - Copies featured images into destination uploads and indexes them as destination attachments.
 - Blocks jobs on missing related-post meta dependencies and creates priority blocker jobs.
 - Supports WordPress-native updates from GitHub releases.

@@ -361,7 +361,7 @@ class AS_Content_Stream {
 		$tabs['update_queue'] = __( 'Update Queue', 'as-content-stream' );
 		$tabs['delete_queue'] = __( 'Delete Queue', 'as-content-stream' );
 		$tabs['processing_queue'] = __( 'Processing Queue', 'as-content-stream' );
-		$tabs['links'] = __( 'Streamed Content', 'as-content-stream' );
+		$tabs['links'] = __( 'Streaming Map', 'as-content-stream' );
 		$tabs['log'] = __( 'Log', 'as-content-stream' );
 
 		if ( ! isset( $tabs[ $active_tab ] ) ) {
@@ -568,7 +568,7 @@ class AS_Content_Stream {
 						<tr><th scope="row"><?php esc_html_e( 'Update Queue', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_update"><?php echo esc_html( isset( $queue_action_counts['update'] ) ? $queue_action_counts['update'] : 0 ); ?></td></tr>
 						<tr><th scope="row"><?php esc_html_e( 'Delete Queue', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_delete"><?php echo esc_html( isset( $queue_action_counts['delete'] ) ? $queue_action_counts['delete'] : 0 ); ?></td></tr>
 						<tr><th scope="row"><?php esc_html_e( 'Processing Queue', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_processing"><?php echo esc_html( $processing_open_count ); ?></td></tr>
-						<tr><th scope="row"><?php esc_html_e( 'Streamed Content', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_streamed"><?php echo esc_html( $streamed_count ); ?></td></tr>
+						<tr><th scope="row"><?php esc_html_e( 'Streaming Map', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_streamed"><?php echo esc_html( $streamed_count ); ?></td></tr>
 						<tr><th scope="row"><?php esc_html_e( 'Log', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_log"><?php echo esc_html( $log_count ); ?></td></tr>
 					</tbody>
 				</table>
@@ -1001,7 +1001,7 @@ class AS_Content_Stream {
 					<a class="button" href="<?php echo esc_url( $this->admin_url( array( 'tab' => 'links' ) ) ); ?>"><?php esc_html_e( 'Clear', 'as-content-stream' ); ?></a>
 				<?php endif; ?>
 			</form>
-			<p><?php echo esc_html( $lookup_id ? __( 'Showing streamed content where that ID is source or destination.', 'as-content-stream' ) : __( 'Showing the latest 100 streamed content links.', 'as-content-stream' ) ); ?></p>
+			<p><?php echo esc_html( $lookup_id ? __( 'Showing streaming map rows where that ID is source or destination.', 'as-content-stream' ) : __( 'Showing all streaming map rows.', 'as-content-stream' ) ); ?></p>
 		</div>
 		<table class="widefat striped as-content-queue">
 			<thead>
@@ -1021,7 +1021,7 @@ class AS_Content_Stream {
 			</thead>
 			<tbody>
 				<?php if ( empty( $links ) ) : ?>
-					<tr><td colspan="11"><?php esc_html_e( 'No streamed content found.', 'as-content-stream' ); ?></td></tr>
+					<tr><td colspan="11"><?php esc_html_e( 'No streaming map rows found.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
 				<?php foreach ( $links as $link ) : ?>
 					<?php
@@ -1685,11 +1685,13 @@ class AS_Content_Stream {
 			return $this->processing_result( 'skipped', __( 'Destination exists in trash; skipped.', 'as-content-stream' ) );
 		}
 
-		if ( $existing_id && 'create' === sanitize_key( $job->action ) && $this->get_link_for_source_target( $source_uuid, (int) $job->target_blog_id, sanitize_key( $job->target_language ) ) ) {
+		$existing_link = $existing_id && 'create' === sanitize_key( $job->action ) ? $this->get_link_for_source_target( $source_uuid, (int) $job->target_blog_id, sanitize_key( $job->target_language ) ) : null;
+		if ( $existing_id && $existing_link ) {
+			$this->set_processing_job_link_id( (int) $job->id, (int) $existing_link->id );
 			if ( $restore ) {
 				restore_current_blog();
 			}
-			return $this->processing_result( 'skipped', __( 'Destination already exists; skipped create.', 'as-content-stream' ) );
+			return $this->processing_result( 'complete', __( 'Destination already mapped; skipped create.', 'as-content-stream' ) );
 		}
 
 		$result_id = $this->copy_source_post_sql_to_destination( $job, (int) $author_id, (int) $existing_id );
@@ -2849,14 +2851,14 @@ class AS_Content_Stream {
 		if ( $lookup_id ) {
 			return $wpdb->get_results(
 				$wpdb->prepare(
-					'SELECT * FROM ' . self::links_table_name() . ' WHERE source_post_id = %d OR target_post_id = %d ORDER BY updated_at DESC LIMIT 100',
+					'SELECT * FROM ' . self::links_table_name() . ' WHERE source_post_id = %d OR target_post_id = %d ORDER BY updated_at DESC',
 					$lookup_id,
 					$lookup_id
 				)
 			);
 		}
 
-		return $wpdb->get_results( 'SELECT * FROM ' . self::links_table_name() . ' ORDER BY updated_at DESC LIMIT 100' );
+		return $wpdb->get_results( 'SELECT * FROM ' . self::links_table_name() . ' ORDER BY updated_at DESC' );
 	}
 
 	/**
@@ -4812,7 +4814,7 @@ class AS_Content_Stream {
 				'user_email'   => self::STREAM_AUTHOR_EMAIL,
 				'display_name' => __( 'Content Stream', 'as-content-stream' ),
 				'nickname'     => __( 'Content Stream', 'as-content-stream' ),
-				'description'  => __( 'System author for streamed content.', 'as-content-stream' ),
+				'description'  => __( 'System author for Content Stream destination posts.', 'as-content-stream' ),
 				'role'         => '',
 			)
 		);
