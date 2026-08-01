@@ -26,6 +26,35 @@
 	width: 100%;
 }
 
+.as-content-toggle {
+	align-items: center;
+	display: flex;
+	gap: 8px;
+	margin: 0 0 8px;
+}
+
+.as-content-test-form {
+	border-top: 1px solid #dcdcde;
+	margin-top: 14px;
+	padding-top: 14px;
+}
+
+.as-content-progress {
+	background: #f0f0f1;
+	border: 1px solid #dcdcde;
+	height: 12px;
+	margin: 10px 0;
+	overflow: hidden;
+	width: 100%;
+}
+
+.as-content-progress span {
+	background: #2271b1;
+	display: block;
+	height: 100%;
+	transition: width 160ms ease;
+}
+
 .as-status {
 	display: inline-block;
 	font-weight: 600;

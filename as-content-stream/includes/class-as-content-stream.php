@@ -15,9 +15,14 @@ if ( ! defined( 'ABSPATH' ) ) {
 class AS_Content_Stream {
 	const OPTION_TARGET_LANGUAGE = 'as_content_stream_target_language';
 	const OPTION_CAPTURE_STATUS  = 'as_content_stream_capture_status';
+	const OPTION_PROCESSING_ENABLED = 'as_content_stream_processing_enabled';
+	const OPTION_TELEMETRY       = 'as_content_stream_telemetry';
 	const NONCE_SETTINGS         = 'as_content_stream_settings';
 	const NONCE_QUEUE            = 'as_content_stream_queue';
+	const NONCE_HEARTBEAT        = 'as_content_stream_heartbeat';
+	const NONCE_TEST_TICK        = 'as_content_stream_test_tick';
 	const PAGE_SLUG              = 'as-content-stream';
+	const CRON_HOOK              = 'as_content_stream_process_tick';
 
 	/**
 	 * Singleton instance.
@@ -53,6 +58,20 @@ class AS_Content_Stream {
 	 */
 	public static function activate() {
 		self::create_queue_table();
+		self::create_processing_queue_table();
+
+		if ( get_site_option( self::OPTION_PROCESSING_ENABLED, false ) ) {
+			self::schedule_cron();
+		}
+	}
+
+	/**
+	 * Deactivate plugin.
+	 *
+	 * @return void
+	 */
+	public static function deactivate() {
+		self::unschedule_cron();
 	}
 
 	/**
@@ -62,11 +81,19 @@ class AS_Content_Stream {
 		add_action( 'admin_menu', array( $this, 'register_core_site_menu' ) );
 		add_action( 'admin_post_as_content_stream_save_settings', array( $this, 'save_settings' ) );
 		add_action( 'admin_post_as_content_stream_clear_queue', array( $this, 'clear_queue' ) );
+		add_action( 'admin_post_as_content_stream_test_tick', array( $this, 'run_test_tick' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ) );
+		add_action( 'wp_ajax_as_content_stream_heartbeat', array( $this, 'ajax_heartbeat' ) );
+		add_action( self::CRON_HOOK, array( $this, 'process_tick' ) );
+		add_filter( 'cron_schedules', array( $this, 'add_cron_schedules' ) );
 
 		add_action( 'wp_after_insert_post', array( $this, 'capture_after_insert_post' ), 20, 4 );
 		add_action( 'wp_trash_post', array( $this, 'capture_trash_post' ), 20, 2 );
 		add_action( 'before_delete_post', array( $this, 'capture_delete_post' ), 20, 2 );
+
+		if ( get_site_option( self::OPTION_PROCESSING_ENABLED, false ) ) {
+			self::schedule_cron();
+		}
 	}
 
 	/**
@@ -106,6 +133,46 @@ class AS_Content_Stream {
 	}
 
 	/**
+	 * Create global processing queue table.
+	 *
+	 * @return void
+	 */
+	private static function create_processing_queue_table() {
+		global $wpdb;
+
+		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+
+		$table_name      = self::processing_queue_table_name();
+		$charset_collate = $wpdb->get_charset_collate();
+
+		$sql = "CREATE TABLE {$table_name} (
+			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+			created_at datetime NOT NULL,
+			started_at datetime NULL,
+			completed_at datetime NULL,
+			parent_queue_id bigint(20) unsigned NOT NULL,
+			action varchar(20) NOT NULL,
+			status varchar(20) NOT NULL DEFAULT 'pending',
+			source_blog_id bigint(20) unsigned NOT NULL,
+			source_post_id bigint(20) unsigned NOT NULL,
+			target_blog_id bigint(20) unsigned NOT NULL,
+			target_language varchar(20) NOT NULL,
+			post_type varchar(64) NOT NULL,
+			payload longtext NULL,
+			result_message text NULL,
+			attempts int(11) unsigned NOT NULL DEFAULT 0,
+			duration_ms bigint(20) unsigned NOT NULL DEFAULT 0,
+			PRIMARY KEY  (id),
+			KEY parent_status (parent_queue_id, status),
+			KEY status (status),
+			KEY action_status (action, status),
+			KEY target_blog (target_blog_id)
+		) {$charset_collate};";
+
+		dbDelta( $sql );
+	}
+
+	/**
 	 * Get queue table name.
 	 *
 	 * @return string
@@ -114,6 +181,17 @@ class AS_Content_Stream {
 		global $wpdb;
 
 		return $wpdb->base_prefix . 'as_content_stream_queue';
+	}
+
+	/**
+	 * Get processing queue table name.
+	 *
+	 * @return string
+	 */
+	private static function processing_queue_table_name() {
+		global $wpdb;
+
+		return $wpdb->base_prefix . 'as_content_stream_processing_queue';
 	}
 
 	/**
@@ -179,6 +257,8 @@ class AS_Content_Stream {
 			'create_queue' => __( 'Create Queue', 'as-content-stream' ),
 			'update_queue' => __( 'Update Queue', 'as-content-stream' ),
 			'delete_queue' => __( 'Delete Queue', 'as-content-stream' ),
+			'processing_queue' => __( 'Processing Queue', 'as-content-stream' ),
+			'log'          => __( 'Log', 'as-content-stream' ),
 		);
 
 		if ( ! isset( $tabs[ $active_tab ] ) ) {
@@ -215,6 +295,12 @@ class AS_Content_Stream {
 					break;
 				case 'delete_queue':
 					$this->render_queue_tab( 'delete' );
+					break;
+				case 'processing_queue':
+					$this->render_processing_queue_tab();
+					break;
+				case 'log':
+					$this->render_log_tab();
 					break;
 				default:
 					$this->render_queue_tab( 'create' );
@@ -314,8 +400,11 @@ class AS_Content_Stream {
 	private function render_settings_tab() {
 		$sites        = $this->discover_sites();
 		$queue_counts = $this->get_queue_counts();
+		$processing_counts = $this->get_processing_queue_counts();
 		$language_counts = $this->get_language_counts( $sites );
 		$target_language = $this->get_effective_target_language( $language_counts );
+		$processing_enabled = (bool) get_site_option( self::OPTION_PROCESSING_ENABLED, false );
+		$heartbeat = $this->get_heartbeat_status();
 		$wpml_sites   = array_filter(
 			$sites,
 			static function ( $site ) {
@@ -328,6 +417,7 @@ class AS_Content_Stream {
 				<h2><?php esc_html_e( 'Target Language', 'as-content-stream' ); ?></h2>
 				<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_save_settings' ) ); ?>">
 					<?php wp_nonce_field( self::NONCE_SETTINGS ); ?>
+					<input type="hidden" name="settings_context" value="target_language">
 					<label class="screen-reader-text" for="as-content-target-language"><?php esc_html_e( 'Target language', 'as-content-stream' ); ?></label>
 					<select id="as-content-target-language" class="as-content-select" name="target_language">
 						<?php if ( empty( $language_counts ) ) : ?>
@@ -345,12 +435,87 @@ class AS_Content_Stream {
 				</form>
 			</div>
 			<div class="as-content-panel">
+				<h2><?php esc_html_e( 'Processing', 'as-content-stream' ); ?></h2>
+				<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_save_settings' ) ); ?>">
+					<?php wp_nonce_field( self::NONCE_SETTINGS ); ?>
+					<input type="hidden" name="settings_context" value="processing">
+					<input type="hidden" name="target_language" value="<?php echo esc_attr( $target_language ); ?>">
+					<label class="as-content-toggle">
+						<input type="checkbox" name="processing_enabled" value="1" <?php checked( $processing_enabled ); ?>>
+						<span><?php esc_html_e( 'Enable processing cron', 'as-content-stream' ); ?></span>
+					</label>
+					<p class="description"><?php esc_html_e( 'When enabled, cron checks every minute and processes one source queue item at a time.', 'as-content-stream' ); ?></p>
+					<?php submit_button( __( 'Save Processing', 'as-content-stream' ), 'primary', 'submit', false ); ?>
+				</form>
+				<?php if ( ! $processing_enabled ) : ?>
+					<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_test_tick' ) ); ?>" class="as-content-test-form">
+						<?php wp_nonce_field( self::NONCE_TEST_TICK ); ?>
+						<?php submit_button( __( 'Run One Test Tick', 'as-content-stream' ), 'secondary', 'submit', false ); ?>
+					</form>
+				<?php endif; ?>
+			</div>
+			<div class="as-content-panel">
 				<h2><?php esc_html_e( 'Network Status', 'as-content-stream' ); ?></h2>
 				<p><strong><?php esc_html_e( 'Sites:', 'as-content-stream' ); ?></strong> <?php echo esc_html( count( $sites ) ); ?></p>
 				<p><strong><?php esc_html_e( 'WPML active sites:', 'as-content-stream' ); ?></strong> <?php echo esc_html( count( $wpml_sites ) ); ?></p>
 				<p><strong><?php esc_html_e( 'Pending queue items:', 'as-content-stream' ); ?></strong> <?php echo esc_html( isset( $queue_counts['pending'] ) ? $queue_counts['pending'] : 0 ); ?></p>
+				<p><strong><?php esc_html_e( 'Processing jobs:', 'as-content-stream' ); ?></strong> <?php echo esc_html( $this->format_counts( $processing_counts ) ); ?></p>
+			</div>
+			<div class="as-content-panel">
+				<h2><?php esc_html_e( 'Heartbeat', 'as-content-stream' ); ?></h2>
+				<div id="as-content-heartbeat" data-nonce="<?php echo esc_attr( wp_create_nonce( self::NONCE_HEARTBEAT ) ); ?>">
+					<p><strong><?php esc_html_e( 'Status:', 'as-content-stream' ); ?></strong> <span data-as-heartbeat="enabled"><?php echo esc_html( $heartbeat['enabled'] ? __( 'On', 'as-content-stream' ) : __( 'Off', 'as-content-stream' ) ); ?></span></p>
+					<p><strong><?php esc_html_e( 'Next check:', 'as-content-stream' ); ?></strong> <span data-as-heartbeat="next_check"><?php echo esc_html( $heartbeat['next_check_seconds'] ); ?></span> <?php esc_html_e( 'seconds', 'as-content-stream' ); ?></p>
+					<p><strong><?php esc_html_e( 'Current phase:', 'as-content-stream' ); ?></strong> <span data-as-heartbeat="phase"><?php echo esc_html( $heartbeat['phase'] ); ?></span></p>
+					<div class="as-content-progress" aria-hidden="true">
+						<span data-as-heartbeat-bar style="width: <?php echo esc_attr( $heartbeat['progress_percent'] ); ?>%;"></span>
+					</div>
+					<p><span data-as-heartbeat="batch_done"><?php echo esc_html( $heartbeat['batch_done'] ); ?></span> / <span data-as-heartbeat="batch_total"><?php echo esc_html( $heartbeat['batch_total'] ); ?></span> <?php esc_html_e( 'items in current batch', 'as-content-stream' ); ?></p>
+					<p><strong><?php esc_html_e( 'Last batch:', 'as-content-stream' ); ?></strong> <span data-as-heartbeat="last_duration"><?php echo esc_html( $heartbeat['last_batch_duration_ms'] ); ?></span>ms</p>
+					<p class="description" data-as-heartbeat="last_message"><?php echo esc_html( $heartbeat['last_message'] ); ?></p>
+				</div>
 			</div>
 		</div>
+		<script>
+			(function () {
+				var root = document.getElementById('as-content-heartbeat');
+				if (!root || !window.ajaxurl) {
+					return;
+				}
+				function setText(name, value) {
+					var node = root.querySelector('[data-as-heartbeat="' + name + '"]');
+					if (node) {
+						node.textContent = value;
+					}
+				}
+				function refresh() {
+					var data = new window.FormData();
+					data.append('action', 'as_content_stream_heartbeat');
+					data.append('nonce', root.getAttribute('data-nonce'));
+					window.fetch(window.ajaxurl, { method: 'POST', credentials: 'same-origin', body: data })
+						.then(function (response) { return response.json(); })
+						.then(function (response) {
+							if (!response || !response.success || !response.data) {
+								return;
+							}
+							var status = response.data;
+							setText('enabled', status.enabled ? 'On' : 'Off');
+							setText('next_check', status.next_check_seconds);
+							setText('phase', status.phase);
+							setText('batch_done', status.batch_done);
+							setText('batch_total', status.batch_total);
+							setText('last_duration', status.last_batch_duration_ms);
+							setText('last_message', status.last_message);
+							var bar = root.querySelector('[data-as-heartbeat-bar]');
+							if (bar) {
+								bar.style.width = status.progress_percent + '%';
+							}
+						})
+						.catch(function () {});
+				}
+				window.setInterval(refresh, 5000);
+			}());
+		</script>
 		<?php
 	}
 
@@ -415,6 +580,96 @@ class AS_Content_Stream {
 	}
 
 	/**
+	 * Render processing queue.
+	 *
+	 * @return void
+	 */
+	private function render_processing_queue_tab() {
+		$items = $this->get_processing_queue_items( false );
+		?>
+		<table class="widefat striped as-content-queue">
+			<thead>
+				<tr>
+					<th><?php esc_html_e( 'Created', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Parent', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Action', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Status', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Source', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Destination', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Language', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Attempts', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Duration', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Result', 'as-content-stream' ); ?></th>
+				</tr>
+			</thead>
+			<tbody>
+				<?php if ( empty( $items ) ) : ?>
+					<tr><td colspan="10"><?php esc_html_e( 'No processing jobs yet.', 'as-content-stream' ); ?></td></tr>
+				<?php endif; ?>
+				<?php foreach ( $items as $item ) : ?>
+					<tr>
+						<td><?php echo esc_html( $item->created_at ); ?></td>
+						<td><?php echo esc_html( '#' . (int) $item->parent_queue_id ); ?></td>
+						<td><?php echo esc_html( ucfirst( $item->action ) ); ?></td>
+						<td><?php echo esc_html( ucfirst( $item->status ) ); ?></td>
+						<td><?php echo esc_html( $this->site_label( (int) $item->source_blog_id ) . ' #' . (int) $item->source_post_id ); ?></td>
+						<td><?php echo esc_html( $this->site_label( (int) $item->target_blog_id ) ); ?></td>
+						<td><?php echo esc_html( $item->target_language ); ?></td>
+						<td><?php echo esc_html( (int) $item->attempts ); ?></td>
+						<td><?php echo esc_html( (int) $item->duration_ms . 'ms' ); ?></td>
+						<td><?php echo esc_html( $item->result_message ); ?></td>
+					</tr>
+				<?php endforeach; ?>
+			</tbody>
+		</table>
+		<?php
+	}
+
+	/**
+	 * Render processing log.
+	 *
+	 * @return void
+	 */
+	private function render_log_tab() {
+		$items = $this->get_processing_queue_items( true );
+		?>
+		<table class="widefat striped as-content-queue">
+			<thead>
+				<tr>
+					<th><?php esc_html_e( 'Completed', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Parent', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Action', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Status', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Source', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Destination', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Language', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Duration', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Result', 'as-content-stream' ); ?></th>
+				</tr>
+			</thead>
+			<tbody>
+				<?php if ( empty( $items ) ) : ?>
+					<tr><td colspan="9"><?php esc_html_e( 'No completed processing jobs yet.', 'as-content-stream' ); ?></td></tr>
+				<?php endif; ?>
+				<?php foreach ( $items as $item ) : ?>
+					<tr>
+						<td><?php echo esc_html( $item->completed_at ); ?></td>
+						<td><?php echo esc_html( '#' . (int) $item->parent_queue_id ); ?></td>
+						<td><?php echo esc_html( ucfirst( $item->action ) ); ?></td>
+						<td><?php echo esc_html( ucfirst( $item->status ) ); ?></td>
+						<td><?php echo esc_html( $this->site_label( (int) $item->source_blog_id ) . ' #' . (int) $item->source_post_id ); ?></td>
+						<td><?php echo esc_html( $this->site_label( (int) $item->target_blog_id ) ); ?></td>
+						<td><?php echo esc_html( $item->target_language ); ?></td>
+						<td><?php echo esc_html( (int) $item->duration_ms . 'ms' ); ?></td>
+						<td><?php echo esc_html( $item->result_message ); ?></td>
+					</tr>
+				<?php endforeach; ?>
+			</tbody>
+		</table>
+		<?php
+	}
+
+	/**
 	 * Save settings.
 	 *
 	 * @return void
@@ -426,6 +681,7 @@ class AS_Content_Stream {
 
 		check_admin_referer( self::NONCE_SETTINGS );
 
+		$settings_context = isset( $_POST['settings_context'] ) ? sanitize_key( wp_unslash( $_POST['settings_context'] ) ) : '';
 		$language_counts = $this->get_language_counts( $this->discover_sites() );
 		$target_language = isset( $_POST['target_language'] ) ? sanitize_key( wp_unslash( $_POST['target_language'] ) ) : '';
 		if ( '' !== $target_language && ! isset( $language_counts[ $target_language ] ) ) {
@@ -434,8 +690,337 @@ class AS_Content_Stream {
 
 		update_site_option( self::OPTION_TARGET_LANGUAGE, $target_language );
 
+		if ( 'processing' === $settings_context ) {
+			$processing_enabled = ! empty( $_POST['processing_enabled'] );
+			update_site_option( self::OPTION_PROCESSING_ENABLED, $processing_enabled ? 1 : 0 );
+
+			if ( $processing_enabled ) {
+				self::schedule_cron();
+			} else {
+				self::unschedule_cron();
+			}
+		}
+
 		wp_safe_redirect( $this->admin_url( array( 'tab' => 'settings', 'updated' => 1 ) ) );
 		exit;
+	}
+
+	/**
+	 * AJAX heartbeat status.
+	 *
+	 * @return void
+	 */
+	public function ajax_heartbeat() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error();
+		}
+
+		check_ajax_referer( self::NONCE_HEARTBEAT, 'nonce' );
+		wp_send_json_success( $this->get_heartbeat_status() );
+	}
+
+	/**
+	 * Add one-minute cron schedule.
+	 *
+	 * @param array<string,array<string,mixed>> $schedules Schedules.
+	 * @return array<string,array<string,mixed>>
+	 */
+	public function add_cron_schedules( $schedules ) {
+		$schedules['as_content_stream_minute'] = array(
+			'interval' => MINUTE_IN_SECONDS,
+			'display'  => __( 'Every minute', 'as-content-stream' ),
+		);
+
+		return $schedules;
+	}
+
+	/**
+	 * Schedule cron.
+	 *
+	 * @return void
+	 */
+	private static function schedule_cron() {
+		if ( ! wp_next_scheduled( self::CRON_HOOK ) ) {
+			wp_schedule_event( time() + MINUTE_IN_SECONDS, 'as_content_stream_minute', self::CRON_HOOK );
+		}
+	}
+
+	/**
+	 * Unschedule cron.
+	 *
+	 * @return void
+	 */
+	private static function unschedule_cron() {
+		$timestamp = wp_next_scheduled( self::CRON_HOOK );
+
+		while ( $timestamp ) {
+			wp_unschedule_event( $timestamp, self::CRON_HOOK );
+			$timestamp = wp_next_scheduled( self::CRON_HOOK );
+		}
+	}
+
+	/**
+	 * Process one cron tick.
+	 *
+	 * @return void
+	 */
+	public function process_tick( $force = false ) {
+		if ( ! $force && ! get_site_option( self::OPTION_PROCESSING_ENABLED, false ) ) {
+			$this->store_telemetry(
+				array(
+					'phase'        => 'disabled',
+					'last_message' => __( 'Processing is disabled.', 'as-content-stream' ),
+				)
+			);
+			return;
+		}
+
+		self::create_queue_table();
+		self::create_processing_queue_table();
+
+		$started = microtime( true );
+		$source_item = $this->get_next_source_queue_item();
+
+		if ( ! $source_item ) {
+			$this->store_telemetry(
+				array(
+					'phase'        => 'idle',
+					'batch_total'  => 0,
+					'batch_done'   => 0,
+					'last_message' => __( 'No source queue items are pending.', 'as-content-stream' ),
+					'last_batch_duration_ms' => $this->duration_ms( $started ),
+				)
+			);
+			return;
+		}
+
+		$this->explode_source_queue_item( $source_item );
+		$result = $this->process_processing_jobs( (int) $source_item->id );
+		$this->complete_source_queue_item_if_ready( (int) $source_item->id );
+
+		$this->store_telemetry(
+			array(
+				'phase'        => $source_item->action,
+				'current_source_id' => (int) $source_item->id,
+				'batch_total'  => (int) $result['total'],
+				'batch_done'   => (int) $result['done'],
+				'last_message' => sprintf(
+					/* translators: 1: processed count, 2: total count. */
+					__( 'Processed %1$d of %2$d processing jobs.', 'as-content-stream' ),
+					(int) $result['done'],
+					(int) $result['total']
+				),
+				'last_batch_duration_ms' => $this->duration_ms( $started ),
+			)
+		);
+	}
+
+	/**
+	 * Run one manual test processing tick while cron is disabled.
+	 *
+	 * @return void
+	 */
+	public function run_test_tick() {
+		if ( ! is_multisite() || ! is_main_site() || ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You do not have permission to run AS Content Stream processing.', 'as-content-stream' ) );
+		}
+
+		check_admin_referer( self::NONCE_TEST_TICK );
+
+		if ( ! get_site_option( self::OPTION_PROCESSING_ENABLED, false ) && 0 === $this->get_active_processing_job_count() ) {
+			$this->process_tick( true );
+		}
+
+		wp_safe_redirect( $this->admin_url( array( 'tab' => 'processing_queue', 'updated' => 1 ) ) );
+		exit;
+	}
+
+	/**
+	 * Get next source queue item in create, update, delete order.
+	 *
+	 * @return object|null
+	 */
+	private function get_next_source_queue_item() {
+		global $wpdb;
+
+		foreach ( array( 'create', 'update', 'delete' ) as $action ) {
+			foreach ( array( 'in_progress', 'pending' ) as $status ) {
+				$item = $wpdb->get_row(
+					$wpdb->prepare(
+						'SELECT * FROM ' . self::queue_table_name() . ' WHERE action = %s AND status = %s ORDER BY id ASC LIMIT 1',
+						$action,
+						$status
+					)
+				);
+
+				if ( $item ) {
+					return $item;
+				}
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Explode one source queue row into one processing row per destination site.
+	 *
+	 * @param object $source_item Source queue row.
+	 * @return void
+	 */
+	private function explode_source_queue_item( $source_item ) {
+		global $wpdb;
+
+		if ( $this->processing_jobs_exist_for_parent( (int) $source_item->id ) ) {
+			return;
+		}
+
+		$language_counts = $this->get_language_counts( $this->discover_sites() );
+		$target_language = $this->get_effective_target_language( $language_counts );
+		$targets = $this->get_processing_targets( $target_language );
+
+		$wpdb->update(
+			self::queue_table_name(),
+			array( 'status' => 'in_progress' ),
+			array( 'id' => (int) $source_item->id ),
+			array( '%s' ),
+			array( '%d' )
+		);
+
+		if ( empty( $targets ) ) {
+			$wpdb->update(
+				self::queue_table_name(),
+				array(
+					'status'     => 'complete',
+					'last_error' => __( 'No active destination sites matched the target language.', 'as-content-stream' ),
+				),
+				array( 'id' => (int) $source_item->id ),
+				array( '%s', '%s' ),
+				array( '%d' )
+			);
+			return;
+		}
+
+		foreach ( $targets as $target ) {
+			$wpdb->insert(
+				self::processing_queue_table_name(),
+				array(
+					'created_at'      => current_time( 'mysql', true ),
+					'parent_queue_id' => (int) $source_item->id,
+					'action'          => sanitize_key( $source_item->action ),
+					'status'          => 'pending',
+					'source_blog_id'  => (int) $source_item->source_blog_id,
+					'source_post_id'  => (int) $source_item->source_post_id,
+					'target_blog_id'  => (int) $target['blog_id'],
+					'target_language' => sanitize_key( $target_language ),
+					'post_type'       => sanitize_key( $source_item->post_type ),
+					'payload'         => $source_item->payload,
+				),
+				array( '%s', '%d', '%s', '%s', '%d', '%d', '%d', '%s', '%s', '%s' )
+			);
+		}
+	}
+
+	/**
+	 * Process pending child jobs for a source item.
+	 *
+	 * @param int $parent_queue_id Parent queue ID.
+	 * @return array<string,int>
+	 */
+	private function process_processing_jobs( $parent_queue_id ) {
+		global $wpdb;
+
+		$jobs = $wpdb->get_results(
+			$wpdb->prepare(
+				'SELECT * FROM ' . self::processing_queue_table_name() . ' WHERE parent_queue_id = %d AND status = %s ORDER BY id ASC',
+				$parent_queue_id,
+				'pending'
+			)
+		);
+		$total = (int) $wpdb->get_var(
+			$wpdb->prepare(
+				'SELECT COUNT(*) FROM ' . self::processing_queue_table_name() . ' WHERE parent_queue_id = %d',
+				$parent_queue_id
+			)
+		);
+		$done = 0;
+
+		foreach ( $jobs as $job ) {
+			$started = microtime( true );
+			$wpdb->update(
+				self::processing_queue_table_name(),
+				array(
+					'status'     => 'in_progress',
+					'started_at' => current_time( 'mysql', true ),
+					'attempts'   => (int) $job->attempts + 1,
+				),
+				array( 'id' => (int) $job->id ),
+				array( '%s', '%s', '%d' ),
+				array( '%d' )
+			);
+
+			$result = $this->process_processing_job_noop( $job );
+			$wpdb->update(
+				self::processing_queue_table_name(),
+				array(
+					'status'         => $result['status'],
+					'completed_at'   => current_time( 'mysql', true ),
+					'duration_ms'    => $this->duration_ms( $started ),
+					'result_message' => $result['message'],
+				),
+				array( 'id' => (int) $job->id ),
+				array( '%s', '%s', '%d', '%s' ),
+				array( '%d' )
+			);
+			$done++;
+		}
+
+		return array(
+			'total' => $total,
+			'done'  => $done,
+		);
+	}
+
+	/**
+	 * Placeholder processing function.
+	 *
+	 * @param object $job Processing job.
+	 * @return array<string,string>
+	 */
+	private function process_processing_job_noop( $job ) {
+		return array(
+			'status'  => 'complete',
+			'message' => __( 'No-op processor completed. Streaming actions are not implemented yet.', 'as-content-stream' ),
+		);
+	}
+
+	/**
+	 * Complete the source item once child processing jobs are terminal.
+	 *
+	 * @param int $parent_queue_id Parent queue ID.
+	 * @return void
+	 */
+	private function complete_source_queue_item_if_ready( $parent_queue_id ) {
+		global $wpdb;
+
+		$open_jobs = (int) $wpdb->get_var(
+			$wpdb->prepare(
+				'SELECT COUNT(*) FROM ' . self::processing_queue_table_name() . " WHERE parent_queue_id = %d AND status IN ('pending', 'in_progress')",
+				$parent_queue_id
+			)
+		);
+
+		if ( 0 !== $open_jobs ) {
+			return;
+		}
+
+		$wpdb->update(
+			self::queue_table_name(),
+			array( 'status' => 'complete' ),
+			array( 'id' => $parent_queue_id ),
+			array( '%s' ),
+			array( '%d' )
+		);
 	}
 
 	/**
@@ -894,10 +1479,102 @@ class AS_Content_Stream {
 
 		return $wpdb->get_results(
 			$wpdb->prepare(
-				'SELECT * FROM ' . self::queue_table_name() . ' WHERE action = %s ORDER BY id DESC LIMIT 100',
+				"SELECT * FROM " . self::queue_table_name() . " WHERE action = %s AND status != 'complete' ORDER BY id DESC LIMIT 100",
 				$action
 			)
 		);
+	}
+
+	/**
+	 * Get processing queue rows.
+	 *
+	 * @param bool $terminal Whether to get terminal log rows.
+	 * @return array<int,object>
+	 */
+	private function get_processing_queue_items( $terminal ) {
+		global $wpdb;
+
+		self::create_processing_queue_table();
+
+		$status_sql = $terminal ? "status IN ('complete', 'skipped', 'failed')" : "status NOT IN ('complete', 'skipped', 'failed')";
+
+		return $wpdb->get_results( 'SELECT * FROM ' . self::processing_queue_table_name() . ' WHERE ' . $status_sql . ' ORDER BY id DESC LIMIT 100' );
+	}
+
+	/**
+	 * Get processing queue counts by status.
+	 *
+	 * @return array<string,int>
+	 */
+	private function get_processing_queue_counts() {
+		global $wpdb;
+
+		self::create_processing_queue_table();
+
+		$rows   = $wpdb->get_results( 'SELECT status, COUNT(*) AS total FROM ' . self::processing_queue_table_name() . ' GROUP BY status' );
+		$counts = array();
+
+		foreach ( (array) $rows as $row ) {
+			$counts[ $row->status ] = (int) $row->total;
+		}
+
+		return $counts;
+	}
+
+	/**
+	 * Get active processing job count.
+	 *
+	 * @return int
+	 */
+	private function get_active_processing_job_count() {
+		global $wpdb;
+
+		self::create_processing_queue_table();
+
+		return (int) $wpdb->get_var( "SELECT COUNT(*) FROM " . self::processing_queue_table_name() . " WHERE status IN ('pending', 'in_progress')" );
+	}
+
+	/**
+	 * Check whether processing jobs already exist for a parent.
+	 *
+	 * @param int $parent_queue_id Parent queue ID.
+	 * @return bool
+	 */
+	private function processing_jobs_exist_for_parent( $parent_queue_id ) {
+		global $wpdb;
+
+		return (bool) $wpdb->get_var(
+			$wpdb->prepare(
+				'SELECT id FROM ' . self::processing_queue_table_name() . ' WHERE parent_queue_id = %d LIMIT 1',
+				$parent_queue_id
+			)
+		);
+	}
+
+	/**
+	 * Get active destination targets for a target language.
+	 *
+	 * @param string $target_language Target language.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function get_processing_targets( $target_language ) {
+		$targets = array();
+
+		if ( '' === $target_language ) {
+			return $targets;
+		}
+
+		foreach ( $this->discover_sites() as $site ) {
+			if ( empty( $site['wpml_active'] ) || empty( $site['languages'] ) || ! is_array( $site['languages'] ) ) {
+				continue;
+			}
+
+			if ( in_array( $target_language, $site['languages'], true ) ) {
+				$targets[] = $site;
+			}
+		}
+
+		return $targets;
 	}
 
 	/**
@@ -916,6 +1593,66 @@ class AS_Content_Stream {
 		}
 
 		return $counts;
+	}
+
+	/**
+	 * Get heartbeat status.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_heartbeat_status() {
+		$enabled = (bool) get_site_option( self::OPTION_PROCESSING_ENABLED, false );
+		$telemetry = get_site_option( self::OPTION_TELEMETRY, array() );
+		$telemetry = is_array( $telemetry ) ? $telemetry : array();
+		$next = wp_next_scheduled( self::CRON_HOOK );
+		$batch_total = isset( $telemetry['batch_total'] ) ? (int) $telemetry['batch_total'] : 0;
+		$batch_done = isset( $telemetry['batch_done'] ) ? (int) $telemetry['batch_done'] : 0;
+		$progress = $batch_total > 0 ? min( 100, round( ( $batch_done / $batch_total ) * 100 ) ) : 0;
+
+		return array(
+			'enabled'                => $enabled,
+			'next_check_seconds'     => $enabled && $next ? max( 0, $next - time() ) : 0,
+			'phase'                  => isset( $telemetry['phase'] ) ? sanitize_key( $telemetry['phase'] ) : 'idle',
+			'current_source_id'      => isset( $telemetry['current_source_id'] ) ? (int) $telemetry['current_source_id'] : 0,
+			'batch_total'            => $batch_total,
+			'batch_done'             => $batch_done,
+			'batch_remaining'        => max( 0, $batch_total - $batch_done ),
+			'progress_percent'       => $progress,
+			'last_batch_duration_ms' => isset( $telemetry['last_batch_duration_ms'] ) ? (int) $telemetry['last_batch_duration_ms'] : 0,
+			'last_message'           => isset( $telemetry['last_message'] ) ? (string) $telemetry['last_message'] : __( 'No processing runs yet.', 'as-content-stream' ),
+			'queue_counts'           => $this->get_queue_counts(),
+			'processing_counts'      => $this->get_processing_queue_counts(),
+		);
+	}
+
+	/**
+	 * Store heartbeat telemetry.
+	 *
+	 * @param array<string,mixed> $telemetry Telemetry values.
+	 * @return void
+	 */
+	private function store_telemetry( $telemetry ) {
+		$existing = get_site_option( self::OPTION_TELEMETRY, array() );
+		$existing = is_array( $existing ) ? $existing : array();
+
+		update_site_option(
+			self::OPTION_TELEMETRY,
+			array_merge(
+				$existing,
+				$telemetry,
+				array( 'last_run_at' => current_time( 'mysql' ) )
+			)
+		);
+	}
+
+	/**
+	 * Get elapsed milliseconds.
+	 *
+	 * @param float $started Start microtime.
+	 * @return int
+	 */
+	private function duration_ms( $started ) {
+		return max( 0, (int) round( ( microtime( true ) - $started ) * 1000 ) );
 	}
 
 	/**

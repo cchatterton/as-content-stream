@@ -1,7 +1,7 @@
 # AS Content Stream
 
 Author: AlphaSys
-Version: 0.1.18
+Version: 0.1.19
 Status: POC
 
 ## Purpose
@@ -50,6 +50,8 @@ as-content-stream/
 - Revision and autosave records are excluded from the queues.
 - Future processors should clear queues in order: create, then update, then delete.
 - Target language defaults to the most common language across destination WPML sites until manually saved.
+- Processing cron can be toggled on and off from Settings.
+- Processing Queue shows active per-site jobs; Log shows completed no-op processing jobs.
 
 ## Future Considerations
 

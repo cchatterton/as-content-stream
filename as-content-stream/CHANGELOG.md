@@ -2,6 +2,13 @@
 
 All notable changes to AS Content Stream are recorded here.
 
+## 0.1.19 - 2026-08-01
+
+- Added a Processing Queue tab for per-destination jobs.
+- Added a Log tab for completed processing jobs.
+- Added processing on/off control, heartbeat telemetry, and a one-shot test tick while processing is off.
+- Added cron scaffolding that explodes source queue items into per-site processing jobs and runs a no-op processor.
+
 ## 0.1.18 - 2026-08-01
 
 - Fixed target language select overflow in the Settings tile.
