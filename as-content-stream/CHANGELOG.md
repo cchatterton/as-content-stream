@@ -2,6 +2,14 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.40 - 2026-08-01
+
+- Replaced the Heartbeat batch fraction with live parent queue and child processing queue pressure metrics.
+- Added all-tab summary counts to the Network Status tile.
+- Removed the target language explanatory line from Settings.
+- Aligned tile action buttons to the bottom-left of their panels.
+- Added Site ID as the first column on Sites & WPML.
+
 ## 0.1.39 - 2026-08-01
 
 - Changed Discovery to map only and no longer create destination content directly.

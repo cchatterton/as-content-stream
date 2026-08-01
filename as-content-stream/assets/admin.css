@@ -13,11 +13,35 @@
 	background: #fff;
 	border: 1px solid #dcdcde;
 	border-radius: 4px;
+	display: flex;
+	flex-direction: column;
 	padding: 16px;
 }
 
 .as-content-panel h2 {
 	margin-top: 0;
+}
+
+.as-content-panel > form,
+.as-content-panel #as-content-heartbeat,
+.as-content-panel #as-content-heartbeat form {
+	display: flex;
+	flex-direction: column;
+}
+
+.as-content-panel > form,
+.as-content-panel #as-content-heartbeat {
+	flex: 1;
+}
+
+.as-content-panel > form .submit,
+.as-content-panel #as-content-heartbeat form .submit {
+	margin-top: auto;
+	padding-bottom: 0;
+}
+
+.as-content-panel > form:last-child {
+	margin-top: auto;
 }
 
 .as-content-select {
@@ -64,6 +88,10 @@
 	display: block;
 	height: 100%;
 	transition: width 160ms ease;
+}
+
+.as-content-progress-danger span {
+	background: #b32d2e;
 }
 
 .as-status {

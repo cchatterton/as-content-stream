@@ -479,6 +479,7 @@ class AS_Content_Stream {
 		<table class="widefat striped as-content-sites">
 			<thead>
 				<tr>
+					<th><?php esc_html_e( 'Site ID', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Site', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'WPML', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Languages', 'as-content-stream' ); ?></th>
@@ -486,10 +487,11 @@ class AS_Content_Stream {
 			</thead>
 			<tbody>
 				<?php if ( empty( $sites ) ) : ?>
-					<tr><td colspan="3"><?php esc_html_e( 'No sites found.', 'as-content-stream' ); ?></td></tr>
+					<tr><td colspan="4"><?php esc_html_e( 'No sites found.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
 				<?php foreach ( $sites as $site ) : ?>
 					<tr>
+						<td><?php echo esc_html( (int) $site['blog_id'] ); ?></td>
 						<td>
 							<strong><?php echo esc_html( $site['name'] ); ?></strong><br>
 							<a href="<?php echo esc_url( $site['url'] ); ?>"><?php echo esc_html( $site['url'] ); ?></a>
@@ -514,8 +516,10 @@ class AS_Content_Stream {
 	 */
 	private function render_settings_tab() {
 		$sites        = $this->discover_sites();
-		$queue_counts = $this->get_queue_counts();
 		$processing_counts = $this->get_processing_queue_counts();
+		$queue_action_counts = $this->get_queue_action_counts();
+		$streamed_count = $this->get_streamed_content_count();
+		$log_count = $this->get_processing_log_count();
 		$language_counts = $this->get_language_counts( $sites );
 		$target_language = $this->get_effective_target_language( $language_counts );
 		$processing_enabled = (bool) get_site_option( self::OPTION_PROCESSING_ENABLED, false );
@@ -546,7 +550,6 @@ class AS_Content_Stream {
 							<?php endforeach; ?>
 						<?php endif; ?>
 					</select>
-					<p class="description"><?php esc_html_e( 'Defaults to the most common destination language. Save to override with another available language.', 'as-content-stream' ); ?></p>
 					<?php submit_button( __( 'Save Settings', 'as-content-stream' ), 'primary', 'submit', false ); ?>
 				</form>
 			</div>
@@ -554,8 +557,10 @@ class AS_Content_Stream {
 				<h2><?php esc_html_e( 'Network Status', 'as-content-stream' ); ?></h2>
 				<p><strong><?php esc_html_e( 'Sites:', 'as-content-stream' ); ?></strong> <?php echo esc_html( count( $sites ) ); ?></p>
 				<p><strong><?php esc_html_e( 'WPML active sites:', 'as-content-stream' ); ?></strong> <?php echo esc_html( count( $wpml_sites ) ); ?></p>
-				<p><strong><?php esc_html_e( 'Pending queue items:', 'as-content-stream' ); ?></strong> <?php echo esc_html( isset( $queue_counts['pending'] ) ? $queue_counts['pending'] : 0 ); ?></p>
-				<p><strong><?php esc_html_e( 'Processing jobs:', 'as-content-stream' ); ?></strong> <?php echo esc_html( $this->format_counts( $processing_counts ) ); ?></p>
+				<p><strong><?php esc_html_e( 'Discovery:', 'as-content-stream' ); ?></strong> <?php echo esc_html( isset( $queue_action_counts['discover'] ) ? $queue_action_counts['discover'] : 0 ); ?></p>
+				<p><strong><?php esc_html_e( 'Create:', 'as-content-stream' ); ?></strong> <?php echo esc_html( isset( $queue_action_counts['create'] ) ? $queue_action_counts['create'] : 0 ); ?> · <strong><?php esc_html_e( 'Update:', 'as-content-stream' ); ?></strong> <?php echo esc_html( isset( $queue_action_counts['update'] ) ? $queue_action_counts['update'] : 0 ); ?> · <strong><?php esc_html_e( 'Delete:', 'as-content-stream' ); ?></strong> <?php echo esc_html( isset( $queue_action_counts['delete'] ) ? $queue_action_counts['delete'] : 0 ); ?></p>
+				<p><strong><?php esc_html_e( 'Processing:', 'as-content-stream' ); ?></strong> <?php echo esc_html( $this->format_counts( $processing_counts ) ); ?></p>
+				<p><strong><?php esc_html_e( 'Streamed Content:', 'as-content-stream' ); ?></strong> <?php echo esc_html( $streamed_count ); ?> · <strong><?php esc_html_e( 'Log:', 'as-content-stream' ); ?></strong> <?php echo esc_html( $log_count ); ?></p>
 				<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_rerun_discovery' ) ); ?>">
 					<?php wp_nonce_field( self::NONCE_QUEUE ); ?>
 					<?php submit_button( __( 'Re-run Discovery', 'as-content-stream' ), 'secondary', 'submit', false ); ?>
@@ -575,10 +580,14 @@ class AS_Content_Stream {
 						<?php submit_button( __( 'Save Mode', 'as-content-stream' ), 'primary', 'submit', false ); ?>
 					</form>
 					<p><strong><?php esc_html_e( 'Next check:', 'as-content-stream' ); ?></strong> <span data-as-heartbeat="next_check"><?php echo esc_html( $heartbeat['next_check_seconds'] ); ?></span> <?php esc_html_e( 'seconds', 'as-content-stream' ); ?></p>
+					<p><strong><?php esc_html_e( 'Parent Queue:', 'as-content-stream' ); ?></strong> <span data-as-heartbeat="parent_in_progress"><?php echo esc_html( $heartbeat['parent_in_progress'] ); ?></span> <?php esc_html_e( 'in progress', 'as-content-stream' ); ?> / <span data-as-heartbeat="parent_pending"><?php echo esc_html( $heartbeat['parent_pending'] ); ?></span> <?php esc_html_e( 'pending', 'as-content-stream' ); ?></p>
 					<div class="as-content-progress" aria-hidden="true">
-						<span data-as-heartbeat-bar style="width: <?php echo esc_attr( $heartbeat['progress_percent'] ); ?>%;"></span>
+						<span data-as-heartbeat-bar="parent" style="width: <?php echo esc_attr( $heartbeat['parent_pressure_percent'] ); ?>%;"></span>
 					</div>
-					<p><span data-as-heartbeat="batch_done"><?php echo esc_html( $heartbeat['batch_done'] ); ?></span> / <span data-as-heartbeat="batch_total"><?php echo esc_html( $heartbeat['batch_total'] ); ?></span> <?php esc_html_e( 'in Processing Queue', 'as-content-stream' ); ?></p>
+					<p><strong><?php esc_html_e( 'Child Queue:', 'as-content-stream' ); ?></strong> <span data-as-heartbeat="child_queued"><?php echo esc_html( $heartbeat['child_queued'] ); ?></span> <?php esc_html_e( 'queued', 'as-content-stream' ); ?> / <span data-as-heartbeat="child_blocked"><?php echo esc_html( $heartbeat['child_blocked'] ); ?></span> <?php esc_html_e( 'blocked', 'as-content-stream' ); ?></p>
+					<div class="as-content-progress as-content-progress-danger" aria-hidden="true">
+						<span data-as-heartbeat-bar="child" style="width: <?php echo esc_attr( $heartbeat['child_blocked_percent'] ); ?>%;"></span>
+					</div>
 				</div>
 			</div>
 		</div>
@@ -606,11 +615,17 @@ class AS_Content_Stream {
 							}
 							var status = response.data;
 							setText('next_check', status.next_check_seconds);
-							setText('batch_done', status.batch_done);
-							setText('batch_total', status.batch_total);
-							var bar = root.querySelector('[data-as-heartbeat-bar]');
-							if (bar) {
-								bar.style.width = status.progress_percent + '%';
+							setText('parent_in_progress', status.parent_in_progress);
+							setText('parent_pending', status.parent_pending);
+							setText('child_queued', status.child_queued);
+							setText('child_blocked', status.child_blocked);
+							var parentBar = root.querySelector('[data-as-heartbeat-bar="parent"]');
+							if (parentBar) {
+								parentBar.style.width = status.parent_pressure_percent + '%';
+							}
+							var childBar = root.querySelector('[data-as-heartbeat-bar="child"]');
+							if (childBar) {
+								childBar.style.width = status.child_blocked_percent + '%';
 							}
 						})
 						.catch(function () {});
@@ -4300,6 +4315,50 @@ class AS_Content_Stream {
 	}
 
 	/**
+	 * Get non-complete parent queue counts by action.
+	 *
+	 * @return array<string,int>
+	 */
+	private function get_queue_action_counts() {
+		global $wpdb;
+
+		$rows = $wpdb->get_results( "SELECT action, COUNT(*) AS total FROM " . self::queue_table_name() . " WHERE status <> 'complete' GROUP BY action" );
+		$counts = array();
+
+		foreach ( (array) $rows as $row ) {
+			$counts[ sanitize_key( $row->action ) ] = (int) $row->total;
+		}
+
+		return $counts;
+	}
+
+	/**
+	 * Get streamed content count.
+	 *
+	 * @return int
+	 */
+	private function get_streamed_content_count() {
+		global $wpdb;
+
+		self::create_links_table();
+
+		return (int) $wpdb->get_var( 'SELECT COUNT(*) FROM ' . self::links_table_name() );
+	}
+
+	/**
+	 * Get completed processing log count.
+	 *
+	 * @return int
+	 */
+	private function get_processing_log_count() {
+		global $wpdb;
+
+		self::create_processing_queue_table();
+
+		return (int) $wpdb->get_var( "SELECT COUNT(*) FROM " . self::processing_queue_table_name() . " WHERE status = 'complete'" );
+	}
+
+	/**
 	 * Get heartbeat status.
 	 *
 	 * @return array<string,mixed>
@@ -4309,25 +4368,32 @@ class AS_Content_Stream {
 		$telemetry = get_site_option( self::OPTION_TELEMETRY, array() );
 		$telemetry = is_array( $telemetry ) ? $telemetry : array();
 		$next = wp_next_scheduled( self::CRON_HOOK );
+		$queue_counts = $this->get_queue_counts();
 		$processing_counts = $this->get_processing_queue_counts();
 		$current_source_id = isset( $telemetry['current_source_id'] ) ? (int) $telemetry['current_source_id'] : 0;
-		$progress_counts = $this->get_processing_progress_counts( $current_source_id );
-		$batch_total = (int) $progress_counts['total'];
-		$batch_done = (int) $progress_counts['done'];
-		$progress = $batch_total > 0 ? min( 100, round( ( $batch_done / $batch_total ) * 100 ) ) : 0;
+		$parent_pending = isset( $queue_counts['pending'] ) ? (int) $queue_counts['pending'] : 0;
+		$parent_in_progress = isset( $queue_counts['in_progress'] ) ? (int) $queue_counts['in_progress'] : 0;
+		$parent_total = $parent_pending + $parent_in_progress;
+		$child_pending = isset( $processing_counts['pending'] ) ? (int) $processing_counts['pending'] : 0;
+		$child_in_progress = isset( $processing_counts['in_progress'] ) ? (int) $processing_counts['in_progress'] : 0;
+		$child_blocked = isset( $processing_counts['blocked'] ) ? (int) $processing_counts['blocked'] : 0;
+		$child_queued = $child_pending + $child_in_progress;
+		$child_total = $child_queued + $child_blocked;
 
 		return array(
 			'enabled'                => $enabled,
 			'next_check_seconds'     => $enabled && $next ? max( 0, $next - time() ) : 0,
 			'phase'                  => isset( $telemetry['phase'] ) ? sanitize_key( $telemetry['phase'] ) : 'idle',
 			'current_source_id'      => $current_source_id,
-			'batch_total'            => $batch_total,
-			'batch_done'             => $batch_done,
-			'batch_remaining'        => max( 0, $batch_total - $batch_done ),
-			'progress_percent'       => $progress,
+			'parent_pending'         => $parent_pending,
+			'parent_in_progress'     => $parent_in_progress,
+			'parent_pressure_percent' => $parent_total > 0 ? min( 100, round( ( $parent_in_progress / $parent_total ) * 100 ) ) : 0,
+			'child_queued'           => $child_queued,
+			'child_blocked'          => $child_blocked,
+			'child_blocked_percent'  => $child_total > 0 ? min( 100, round( ( $child_blocked / $child_total ) * 100 ) ) : 0,
 			'last_batch_duration_ms' => isset( $telemetry['last_batch_duration_ms'] ) ? (int) $telemetry['last_batch_duration_ms'] : 0,
 			'last_message'           => isset( $telemetry['last_message'] ) ? (string) $telemetry['last_message'] : __( 'No processing runs yet.', 'as-content-stream' ),
-			'queue_counts'           => $this->get_queue_counts(),
+			'queue_counts'           => $queue_counts,
 			'processing_counts'      => $processing_counts,
 		);
 	}
