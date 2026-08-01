@@ -601,6 +601,7 @@ class AS_Content_Stream {
 		<table class="widefat striped as-content-queue">
 			<thead>
 				<tr>
+					<th><?php esc_html_e( 'Job', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Created', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Action', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Status', 'as-content-stream' ); ?></th>
@@ -609,7 +610,6 @@ class AS_Content_Stream {
 					<th><?php esc_html_e( 'Post Name', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Original Post Name', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Post Type', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Inspect', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Control', 'as-content-stream' ); ?></th>
 				</tr>
 			</thead>
@@ -618,24 +618,27 @@ class AS_Content_Stream {
 					<tr><td colspan="10"><?php esc_html_e( 'No queue items yet.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
 				<?php foreach ( $items as $item ) : ?>
-					<?php $payload = $this->decode_queue_payload( $item->payload ); ?>
+					<?php
+					$payload = $this->decode_queue_payload( $item->payload );
+					$edit_url = $this->source_edit_url( (int) $item->source_blog_id, (int) $item->source_post_id );
+					$post_title = isset( $payload['post_title'] ) ? $payload['post_title'] : $this->get_post_title_from_site( (int) $item->source_blog_id, (int) $item->source_post_id );
+					?>
 					<tr>
+						<td><?php echo esc_html( '#' . (int) $item->id ); ?></td>
 						<td><?php echo esc_html( $item->created_at ); ?></td>
 						<td><?php echo esc_html( ucfirst( $item->action ) ); ?></td>
 						<td><?php echo esc_html( ucfirst( $item->status ) ); ?></td>
-						<td><?php echo esc_html( $this->site_label( (int) $item->source_blog_id ) . ' #' . (int) $item->source_post_id ); ?></td>
-						<td><?php echo esc_html( isset( $payload['post_title'] ) ? $payload['post_title'] : '' ); ?></td>
+						<td><?php echo esc_html( '#' . (int) $item->source_post_id ); ?></td>
+						<td>
+							<?php if ( $edit_url ) : ?>
+								<a href="<?php echo esc_url( $edit_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $post_title ? $post_title : '#' . (int) $item->source_post_id ); ?></a>
+							<?php else : ?>
+								<?php echo esc_html( $post_title ? $post_title : '-' ); ?>
+							<?php endif; ?>
+						</td>
 						<td><?php echo esc_html( isset( $payload['post_name'] ) ? $payload['post_name'] : '' ); ?></td>
 						<td><?php echo esc_html( isset( $payload['original_post_name'] ) ? $payload['original_post_name'] : '' ); ?></td>
 						<td><?php echo esc_html( $item->post_type ); ?></td>
-						<td>
-							<?php $edit_url = $this->source_edit_url( (int) $item->source_blog_id, (int) $item->source_post_id ); ?>
-							<?php if ( $edit_url ) : ?>
-								<a href="<?php echo esc_url( $edit_url ); ?>"><?php esc_html_e( 'Edit', 'as-content-stream' ); ?></a>
-							<?php else : ?>
-								<?php echo esc_html( '-' ); ?>
-							<?php endif; ?>
-						</td>
 						<td>
 							<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_run_queue_item' ) ); ?>">
 								<?php wp_nonce_field( self::NONCE_QUEUE ); ?>
@@ -663,12 +666,12 @@ class AS_Content_Stream {
 				<tr>
 					<th><?php esc_html_e( 'Job', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Created', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Parent', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Blocked By', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Parent Job', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Blocked By Job', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Action', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Status', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Source', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Source Title', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Post Title', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Post Type', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Destination', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Language', 'as-content-stream' ); ?></th>
@@ -686,10 +689,10 @@ class AS_Content_Stream {
 					<?php
 					$payload = $this->decode_queue_payload( $item->payload );
 					$source_url = $this->source_edit_url( (int) $item->source_blog_id, (int) $item->source_post_id );
-					$source_url = $source_url ? $source_url : $this->site_admin_url( (int) $item->source_blog_id );
 					$target_url = $this->destination_edit_url( (int) $item->target_blog_id, sanitize_key( $item->post_type ), $payload );
 					$target_url = $target_url ? $target_url : $this->site_admin_url( (int) $item->target_blog_id );
 					$is_blocked = 'blocked' === sanitize_key( $item->status ) || ! empty( $item->blocked_by );
+					$post_title = isset( $payload['post_title'] ) ? $payload['post_title'] : $this->get_post_title_from_site( (int) $item->source_blog_id, (int) $item->source_post_id );
 					?>
 					<tr>
 						<td><?php echo esc_html( '#' . (int) $item->id ); ?></td>
@@ -698,8 +701,14 @@ class AS_Content_Stream {
 						<td><?php echo esc_html( ! empty( $item->blocked_by ) ? '#' . (int) $item->blocked_by : '-' ); ?></td>
 						<td><?php echo esc_html( ucfirst( $item->action ) ); ?></td>
 						<td><?php echo esc_html( ucfirst( $item->status ) ); ?></td>
-						<td><a href="<?php echo esc_url( $source_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( '#' . (int) $item->source_post_id ); ?></a></td>
-						<td><?php echo esc_html( isset( $payload['post_title'] ) ? $payload['post_title'] : $this->get_post_title_from_site( (int) $item->source_blog_id, (int) $item->source_post_id ) ); ?></td>
+						<td><?php echo esc_html( '#' . (int) $item->source_post_id ); ?></td>
+						<td>
+							<?php if ( $source_url ) : ?>
+								<a href="<?php echo esc_url( $source_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $post_title ? $post_title : '#' . (int) $item->source_post_id ); ?></a>
+							<?php else : ?>
+								<?php echo esc_html( $post_title ? $post_title : '-' ); ?>
+							<?php endif; ?>
+						</td>
 						<td><?php echo esc_html( sanitize_key( $item->post_type ) ); ?></td>
 						<td><a href="<?php echo esc_url( $target_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $this->site_label( (int) $item->target_blog_id ) ); ?></a></td>
 						<td><?php echo esc_html( $item->target_language ); ?></td>
@@ -747,11 +756,11 @@ class AS_Content_Stream {
 				<tr>
 					<th><?php esc_html_e( 'Job', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Completed', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Parent', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Parent Job', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Action', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Status', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Source', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Source Title', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Post Title', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Post Type', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Destination', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Language', 'as-content-stream' ); ?></th>
@@ -768,9 +777,9 @@ class AS_Content_Stream {
 					<?php
 					$payload = $this->decode_queue_payload( $item->payload );
 					$source_url = $this->source_edit_url( (int) $item->source_blog_id, (int) $item->source_post_id );
-					$source_url = $source_url ? $source_url : $this->site_admin_url( (int) $item->source_blog_id );
 					$target_url = $this->destination_edit_url( (int) $item->target_blog_id, sanitize_key( $item->post_type ), $payload );
 					$target_url = $target_url ? $target_url : $this->site_admin_url( (int) $item->target_blog_id );
+					$post_title = isset( $payload['post_title'] ) ? $payload['post_title'] : $this->get_post_title_from_site( (int) $item->source_blog_id, (int) $item->source_post_id );
 					?>
 					<tr>
 						<td><?php echo esc_html( '#' . (int) $item->id ); ?></td>
@@ -778,8 +787,14 @@ class AS_Content_Stream {
 						<td><?php echo esc_html( '#' . (int) $item->parent_queue_id ); ?></td>
 						<td><?php echo esc_html( ucfirst( $item->action ) ); ?></td>
 						<td><?php echo esc_html( ucfirst( $item->status ) ); ?></td>
-						<td><a href="<?php echo esc_url( $source_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( '#' . (int) $item->source_post_id ); ?></a></td>
-						<td><?php echo esc_html( isset( $payload['post_title'] ) ? $payload['post_title'] : $this->get_post_title_from_site( (int) $item->source_blog_id, (int) $item->source_post_id ) ); ?></td>
+						<td><?php echo esc_html( '#' . (int) $item->source_post_id ); ?></td>
+						<td>
+							<?php if ( $source_url ) : ?>
+								<a href="<?php echo esc_url( $source_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $post_title ? $post_title : '#' . (int) $item->source_post_id ); ?></a>
+							<?php else : ?>
+								<?php echo esc_html( $post_title ? $post_title : '-' ); ?>
+							<?php endif; ?>
+						</td>
 						<td><?php echo esc_html( sanitize_key( $item->post_type ) ); ?></td>
 						<td><a href="<?php echo esc_url( $target_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $this->site_label( (int) $item->target_blog_id ) ); ?></a></td>
 						<td><?php echo esc_html( $item->target_language ); ?></td>
@@ -818,34 +833,43 @@ class AS_Content_Stream {
 		<table class="widefat striped as-content-queue">
 			<thead>
 				<tr>
-					<th><?php esc_html_e( 'Link', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Job', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Last Streamed', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Link', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Last Action', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Status', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Source', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Source Title', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Post Title', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Post Type', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Destination', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Language', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Run', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Control', 'as-content-stream' ); ?></th>
 				</tr>
 			</thead>
 			<tbody>
 				<?php if ( empty( $links ) ) : ?>
-					<tr><td colspan="10"><?php esc_html_e( 'No streamed content found.', 'as-content-stream' ); ?></td></tr>
+					<tr><td colspan="11"><?php esc_html_e( 'No streamed content found.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
 				<?php foreach ( $links as $link ) : ?>
 					<?php
 					$source_url = $this->source_edit_url( (int) $link->source_blog_id, (int) $link->source_post_id );
 					$target_url = $this->source_edit_url( (int) $link->target_blog_id, (int) $link->target_post_id );
+					$post_title = $this->get_post_title_from_site( (int) $link->source_blog_id, (int) $link->source_post_id );
 					?>
 					<tr>
-						<td><?php echo esc_html( '#' . (int) $link->id ); ?></td>
+						<td><?php echo esc_html( $link->last_processing_job_id ? '#' . (int) $link->last_processing_job_id : '-' ); ?></td>
 						<td><?php echo esc_html( $link->last_streamed_at ? $link->last_streamed_at : '-' ); ?></td>
+						<td><?php echo esc_html( '#' . (int) $link->id ); ?></td>
 						<td><?php echo esc_html( ucfirst( $link->last_action ) ); ?></td>
 						<td><?php echo esc_html( ucfirst( $link->status ) ); ?></td>
-						<td><a href="<?php echo esc_url( $source_url ? $source_url : $this->site_admin_url( (int) $link->source_blog_id ) ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( '#' . (int) $link->source_post_id ); ?></a></td>
-						<td><?php echo esc_html( $this->get_post_title_from_site( (int) $link->source_blog_id, (int) $link->source_post_id ) ); ?></td>
+						<td><?php echo esc_html( '#' . (int) $link->source_post_id ); ?></td>
+						<td>
+							<?php if ( $source_url ) : ?>
+								<a href="<?php echo esc_url( $source_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $post_title ? $post_title : '#' . (int) $link->source_post_id ); ?></a>
+							<?php else : ?>
+								<?php echo esc_html( $post_title ? $post_title : '-' ); ?>
+							<?php endif; ?>
+						</td>
 						<td><?php echo esc_html( sanitize_key( $link->source_post_type ) ); ?></td>
 						<td><a href="<?php echo esc_url( $target_url ? $target_url : $this->site_admin_url( (int) $link->target_blog_id ) ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $this->site_label( (int) $link->target_blog_id ) . ' #' . (int) $link->target_post_id ); ?></a></td>
 						<td><?php echo esc_html( $link->target_language ); ?></td>

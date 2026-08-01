@@ -1,7 +1,7 @@
 # Content Stream
 
 Author: AlphaSys
-Version: 0.1.33
+Version: 0.1.34
 Status: POC
 
 ## Purpose
@@ -23,6 +23,7 @@ Content Stream is a network-enabled WordPress plugin scaffold for multisite cont
 - Stores the target language setting from available destination languages for future queue processing.
 - Ensures active WPML destination sites have the no-login stream author and integration role.
 - Adds manual Run controls to Create, Update, and Delete Queue rows to move items into Processing Queue.
+- Queue-style tables expose Job IDs and use Post Title as the source edit link.
 - Links source and destination sites from the Processing Queue and Log tabs.
 - Creates/updates/trashes destination posts from processing jobs with stream identifiers and the integration author.
 - Keeps failed processing jobs out of Log and available for retry in Processing Queue.

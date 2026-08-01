@@ -2,6 +2,14 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.34 - 2026-08-01
+
+- Added Job IDs to Create, Update, and Delete Queue tables.
+- Standardized source content links so Post Title is the edit link and Source is a plain post ID.
+- Renamed Source Title columns to Post Title across processing-facing tables.
+- Put date columns second wherever a table has a date, including Streamed Content.
+- Changed Streamed Content to use the last Processing Queue job ID as the first column.
+
 ## 0.1.33 - 2026-08-01
 
 - Renamed the visible Links tab to Streamed Content.
