@@ -2,6 +2,13 @@
 
 All notable changes to AS Content Stream are recorded here.
 
+## 0.1.24 - 2026-08-01
+
+- Changed Processing Queue controls to show a manual Run button for every non-complete job.
+- Switched destination post create/update handling to direct SQL row copying from the source post.
+- Copied source postmeta rows directly to the destination postmeta table.
+- Forced newly-created destination posts to draft while keeping the integration author.
+
 ## 0.1.23 - 2026-08-01
 
 - Kept failed and skipped jobs in Processing Queue instead of Log.

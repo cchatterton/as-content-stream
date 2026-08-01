@@ -96,7 +96,7 @@ class AS_Content_Stream {
 		add_action( 'admin_post_as_content_stream_save_settings', array( $this, 'save_settings' ) );
 		add_action( 'admin_post_as_content_stream_clear_queue', array( $this, 'clear_queue' ) );
 		add_action( 'admin_post_as_content_stream_clear_log', array( $this, 'clear_log' ) );
-		add_action( 'admin_post_as_content_stream_retry_processing_job', array( $this, 'retry_processing_job' ) );
+		add_action( 'admin_post_as_content_stream_run_processing_job', array( $this, 'run_processing_job' ) );
 		add_action( 'admin_post_as_content_stream_test_tick', array( $this, 'run_test_tick' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ) );
 		add_action( 'wp_ajax_as_content_stream_heartbeat', array( $this, 'ajax_heartbeat' ) );
@@ -658,15 +658,11 @@ class AS_Content_Stream {
 						<td><?php echo esc_html( (int) $item->duration_ms . 'ms' ); ?></td>
 						<td><?php echo esc_html( $item->result_message ); ?></td>
 						<td>
-							<?php if ( in_array( $item->status, array( 'failed', 'skipped' ), true ) ) : ?>
-								<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_retry_processing_job' ) ); ?>">
-									<?php wp_nonce_field( self::NONCE_PROCESSING ); ?>
-									<input type="hidden" name="job_id" value="<?php echo esc_attr( (int) $item->id ); ?>">
-									<?php submit_button( __( 'Re-run', 'as-content-stream' ), 'secondary small', 'submit', false ); ?>
-								</form>
-							<?php else : ?>
-								<?php echo esc_html( '-' ); ?>
-							<?php endif; ?>
+							<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_run_processing_job' ) ); ?>">
+								<?php wp_nonce_field( self::NONCE_PROCESSING ); ?>
+								<input type="hidden" name="job_id" value="<?php echo esc_attr( (int) $item->id ); ?>">
+								<?php submit_button( __( 'Run', 'as-content-stream' ), 'secondary small', 'submit', false ); ?>
+							</form>
 						</td>
 					</tr>
 				<?php endforeach; ?>
@@ -1150,21 +1146,22 @@ class AS_Content_Stream {
 			return $this->processing_result( 'skipped', __( 'Destination already exists; skipped create.', 'as-content-stream' ) );
 		}
 
-		$post_data = $this->destination_post_data_from_payload( $job, $payload, (int) $author_id );
-		if ( $existing_id ) {
-			$post_data['ID'] = $existing_id;
-			$result_id = wp_update_post( wp_slash( $post_data ), true );
+		$result_id = $this->copy_source_post_sql_to_destination( $job, (int) $author_id, (int) $existing_id );
+		if ( $result_id ) {
+			$this->copy_source_postmeta_sql_to_destination( $job, (int) $result_id );
+		}
+
+		if ( $result_id && $existing_id ) {
 			$message = __( 'Destination post updated.', 'as-content-stream' );
-		} else {
-			$result_id = wp_insert_post( wp_slash( $post_data ), true );
+		} elseif ( $result_id ) {
 			$message = __( 'Destination post created.', 'as-content-stream' );
 		}
 
-		if ( is_wp_error( $result_id ) ) {
+		if ( ! $result_id ) {
 			if ( $restore ) {
 				restore_current_blog();
 			}
-			return $this->processing_result( 'failed', $result_id->get_error_message() );
+			return $this->processing_result( 'failed', __( 'Unable to copy source post SQL to destination.', 'as-content-stream' ) );
 		}
 
 		$this->store_destination_identifiers( (int) $result_id, $job, $payload );
@@ -1335,30 +1332,84 @@ class AS_Content_Stream {
 	}
 
 	/**
-	 * Build destination post data from the source snapshot.
+	 * Copy the source post row to the destination with SQL.
 	 *
-	 * @param object              $job Processing job.
-	 * @param array<string,mixed> $payload Queue payload.
-	 * @param int                 $author_id Destination author ID.
-	 * @return array<string,mixed>
+	 * @param object $job Processing job.
+	 * @param int    $author_id Destination author ID.
+	 * @param int    $existing_id Existing destination post ID, if any.
+	 * @return int
 	 */
-	private function destination_post_data_from_payload( $job, $payload, $author_id ) {
-		$post_status = isset( $payload['post_status'] ) ? sanitize_key( $payload['post_status'] ) : 'draft';
-		if ( 'auto-draft' === $post_status || 'trash' === $post_status ) {
-			$post_status = 'draft';
+	private function copy_source_post_sql_to_destination( $job, $author_id, $existing_id = 0 ) {
+		global $wpdb;
+
+		$source_table = $wpdb->get_blog_prefix( (int) $job->source_blog_id ) . 'posts';
+		$target_table = $wpdb->get_blog_prefix( (int) $job->target_blog_id ) . 'posts';
+		$source_row = $wpdb->get_row(
+			$wpdb->prepare(
+				"SELECT * FROM {$source_table} WHERE ID = %d LIMIT 1",
+				(int) $job->source_post_id
+			),
+			ARRAY_A
+		);
+
+		if ( empty( $source_row ) ) {
+			return 0;
 		}
 
-		return array(
-			'post_author'    => $author_id,
-			'post_name'      => isset( $payload['original_post_name'] ) && '' !== $payload['original_post_name'] ? sanitize_title( $payload['original_post_name'] ) : sanitize_title( isset( $payload['post_name'] ) ? $payload['post_name'] : '' ),
-			'post_date'      => isset( $payload['post_date'] ) ? (string) $payload['post_date'] : '',
-			'post_date_gmt'  => isset( $payload['post_date_gmt'] ) ? (string) $payload['post_date_gmt'] : '',
-			'post_modified'  => isset( $payload['post_modified'] ) ? (string) $payload['post_modified'] : '',
-			'post_modified_gmt' => isset( $payload['post_modified_gmt'] ) ? (string) $payload['post_modified_gmt'] : '',
-			'post_status'    => $post_status,
-			'post_title'     => isset( $payload['post_title'] ) ? (string) $payload['post_title'] : '',
-			'post_type'      => sanitize_key( $job->post_type ),
+		unset( $source_row['ID'] );
+		$source_row['post_author'] = $author_id;
+		$source_row['guid'] = '';
+		$source_row['post_parent'] = 0;
+
+		if ( $existing_id ) {
+			$source_row['ID'] = $existing_id;
+			$updated = $wpdb->replace( $target_table, $source_row );
+			clean_post_cache( $existing_id );
+
+			return false === $updated ? 0 : $existing_id;
+		}
+
+		$source_row['post_status'] = 'draft';
+		$inserted = $wpdb->insert( $target_table, $source_row );
+		if ( ! $inserted ) {
+			return 0;
+		}
+
+		return (int) $wpdb->insert_id;
+	}
+
+	/**
+	 * Copy source postmeta rows to the destination with SQL.
+	 *
+	 * @param object $job Processing job.
+	 * @param int    $destination_post_id Destination post ID.
+	 * @return void
+	 */
+	private function copy_source_postmeta_sql_to_destination( $job, $destination_post_id ) {
+		global $wpdb;
+
+		$source_table = $wpdb->get_blog_prefix( (int) $job->source_blog_id ) . 'postmeta';
+		$target_table = $wpdb->get_blog_prefix( (int) $job->target_blog_id ) . 'postmeta';
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT meta_key, meta_value FROM {$source_table} WHERE post_id = %d",
+				(int) $job->source_post_id
+			),
+			ARRAY_A
 		);
+
+		$wpdb->delete( $target_table, array( 'post_id' => $destination_post_id ), array( '%d' ) );
+		foreach ( (array) $rows as $row ) {
+			$wpdb->insert(
+				$target_table,
+				array(
+					'post_id'    => $destination_post_id,
+					'meta_key'   => $row['meta_key'],
+					'meta_value' => $row['meta_value'],
+				),
+				array( '%d', '%s', '%s' )
+			);
+		}
 	}
 
 	/**
@@ -1505,11 +1556,11 @@ class AS_Content_Stream {
 	}
 
 	/**
-	 * Reset a failed processing job for another run.
+	 * Run a processing job manually.
 	 *
 	 * @return void
 	 */
-	public function retry_processing_job() {
+	public function run_processing_job() {
 		if ( ! is_multisite() || ! is_main_site() || ! current_user_can( 'manage_options' ) ) {
 			wp_die( esc_html__( 'You do not have permission to update AS Content Stream.', 'as-content-stream' ) );
 		}
@@ -1522,10 +1573,9 @@ class AS_Content_Stream {
 			self::create_processing_queue_table();
 			$job = $wpdb->get_row(
 				$wpdb->prepare(
-					'SELECT * FROM ' . self::processing_queue_table_name() . ' WHERE id = %d AND status IN (%s, %s)',
+					'SELECT * FROM ' . self::processing_queue_table_name() . ' WHERE id = %d AND status <> %s',
 					$job_id,
-					'failed',
-					'skipped'
+					'complete'
 				)
 			);
 			if ( $job ) {
