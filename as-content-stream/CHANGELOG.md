@@ -2,6 +2,14 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.35 - 2026-08-01
+
+- Added a temporary Discovery Queue tab for published source content missing full Streamed Content coverage.
+- Added discovery tiles by post type showing published, mapped, and unmapped counts.
+- Added `discover` queue and processing actions ahead of create, update, and delete.
+- Uses legacy WFC Push Post metadata first, then slug and target-language matching, before creating destination drafts.
+- Keeps Discovery processing in the same manual/cron flow as the other queues.
+
 ## 0.1.34 - 2026-08-01
 
 - Added Job IDs to Create, Update, and Delete Queue tables.

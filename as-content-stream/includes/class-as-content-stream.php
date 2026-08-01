@@ -322,18 +322,24 @@ class AS_Content_Stream {
 		}
 
 		self::create_queue_table();
+		self::create_links_table();
+		$this->refresh_discovery_queue();
 
 		$active_tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'create_queue';
+		$has_discovery = $this->has_discovery_queue_items();
 		$tabs       = array(
 			'settings'     => __( 'Settings', 'as-content-stream' ),
 			'sites'        => __( 'Sites & WPML', 'as-content-stream' ),
-			'create_queue' => __( 'Create Queue', 'as-content-stream' ),
-			'update_queue' => __( 'Update Queue', 'as-content-stream' ),
-			'delete_queue' => __( 'Delete Queue', 'as-content-stream' ),
-			'processing_queue' => __( 'Processing Queue', 'as-content-stream' ),
-			'links'        => __( 'Streamed Content', 'as-content-stream' ),
-			'log'          => __( 'Log', 'as-content-stream' ),
 		);
+		if ( $has_discovery ) {
+			$tabs['discovery_queue'] = __( 'Discovery Queue', 'as-content-stream' );
+		}
+		$tabs['create_queue'] = __( 'Create Queue', 'as-content-stream' );
+		$tabs['update_queue'] = __( 'Update Queue', 'as-content-stream' );
+		$tabs['delete_queue'] = __( 'Delete Queue', 'as-content-stream' );
+		$tabs['processing_queue'] = __( 'Processing Queue', 'as-content-stream' );
+		$tabs['links'] = __( 'Streamed Content', 'as-content-stream' );
+		$tabs['log'] = __( 'Log', 'as-content-stream' );
 
 		if ( ! isset( $tabs[ $active_tab ] ) ) {
 			$active_tab = 'create_queue';
@@ -366,6 +372,9 @@ class AS_Content_Stream {
 					break;
 				case 'sites':
 					$this->render_sites_tab();
+					break;
+				case 'discovery_queue':
+					$this->render_discovery_tab();
 					break;
 				case 'update_queue':
 					$this->render_queue_tab( 'update' );
@@ -626,7 +635,7 @@ class AS_Content_Stream {
 					<tr>
 						<td><?php echo esc_html( '#' . (int) $item->id ); ?></td>
 						<td><?php echo esc_html( $item->created_at ); ?></td>
-						<td><?php echo esc_html( ucfirst( $item->action ) ); ?></td>
+						<td><?php echo esc_html( $this->format_action_label( $item->action ) ); ?></td>
 						<td><?php echo esc_html( ucfirst( $item->status ) ); ?></td>
 						<td><?php echo esc_html( '#' . (int) $item->source_post_id ); ?></td>
 						<td>
@@ -651,6 +660,34 @@ class AS_Content_Stream {
 			</tbody>
 		</table>
 		<?php
+	}
+
+	/**
+	 * Render discovery queue.
+	 *
+	 * @return void
+	 */
+	private function render_discovery_tab() {
+		$stats = $this->get_discovery_stats();
+		?>
+		<div class="as-content-grid as-content-discovery-grid">
+			<?php if ( empty( $stats ) ) : ?>
+				<div class="as-content-panel">
+					<h2><?php esc_html_e( 'Discovery', 'as-content-stream' ); ?></h2>
+					<p><?php esc_html_e( 'All published source content is mapped for the active target sites.', 'as-content-stream' ); ?></p>
+				</div>
+			<?php endif; ?>
+			<?php foreach ( $stats as $stat ) : ?>
+				<div class="as-content-panel">
+					<h2><?php echo esc_html( $stat['post_type'] ); ?></h2>
+					<p><strong><?php esc_html_e( 'Published in Core:', 'as-content-stream' ); ?></strong> <?php echo esc_html( (int) $stat['published'] ); ?></p>
+					<p><strong><?php esc_html_e( 'Mapped:', 'as-content-stream' ); ?></strong> <?php echo esc_html( (int) $stat['mapped'] ); ?></p>
+					<p><strong><?php esc_html_e( 'Unmapped:', 'as-content-stream' ); ?></strong> <?php echo esc_html( (int) $stat['unmapped'] ); ?></p>
+				</div>
+			<?php endforeach; ?>
+		</div>
+		<?php
+		$this->render_queue_tab( 'discover' );
 	}
 
 	/**
@@ -699,7 +736,7 @@ class AS_Content_Stream {
 						<td><?php echo esc_html( $item->created_at ); ?></td>
 						<td><?php echo esc_html( '#' . (int) $item->parent_queue_id ); ?></td>
 						<td><?php echo esc_html( ! empty( $item->blocked_by ) ? '#' . (int) $item->blocked_by : '-' ); ?></td>
-						<td><?php echo esc_html( ucfirst( $item->action ) ); ?></td>
+						<td><?php echo esc_html( $this->format_action_label( $item->action ) ); ?></td>
 						<td><?php echo esc_html( ucfirst( $item->status ) ); ?></td>
 						<td><?php echo esc_html( '#' . (int) $item->source_post_id ); ?></td>
 						<td>
@@ -785,7 +822,7 @@ class AS_Content_Stream {
 						<td><?php echo esc_html( '#' . (int) $item->id ); ?></td>
 						<td><?php echo esc_html( $item->completed_at ); ?></td>
 						<td><?php echo esc_html( '#' . (int) $item->parent_queue_id ); ?></td>
-						<td><?php echo esc_html( ucfirst( $item->action ) ); ?></td>
+						<td><?php echo esc_html( $this->format_action_label( $item->action ) ); ?></td>
 						<td><?php echo esc_html( ucfirst( $item->status ) ); ?></td>
 						<td><?php echo esc_html( '#' . (int) $item->source_post_id ); ?></td>
 						<td>
@@ -860,7 +897,7 @@ class AS_Content_Stream {
 						<td><?php echo esc_html( $link->last_processing_job_id ? '#' . (int) $link->last_processing_job_id : '-' ); ?></td>
 						<td><?php echo esc_html( $link->last_streamed_at ? $link->last_streamed_at : '-' ); ?></td>
 						<td><?php echo esc_html( '#' . (int) $link->id ); ?></td>
-						<td><?php echo esc_html( ucfirst( $link->last_action ) ); ?></td>
+						<td><?php echo esc_html( $this->format_action_label( $link->last_action ) ); ?></td>
 						<td><?php echo esc_html( ucfirst( $link->status ) ); ?></td>
 						<td><?php echo esc_html( '#' . (int) $link->source_post_id ); ?></td>
 						<td>
@@ -1056,14 +1093,14 @@ class AS_Content_Stream {
 	}
 
 	/**
-	 * Get next source queue item in create, update, delete order.
+	 * Get next source queue item in discover, create, update, delete order.
 	 *
 	 * @return object|null
 	 */
 	private function get_next_source_queue_item() {
 		global $wpdb;
 
-		foreach ( array( 'create', 'update', 'delete' ) as $action ) {
+		foreach ( array( 'discover', 'create', 'update', 'delete' ) as $action ) {
 			foreach ( array( 'in_progress', 'pending' ) as $status ) {
 				$item = $wpdb->get_row(
 					$wpdb->prepare(
@@ -1284,11 +1321,88 @@ class AS_Content_Stream {
 			return $this->process_delete_job( $job );
 		}
 
+		if ( 'discover' === $action ) {
+			return $this->process_discovery_job( $job );
+		}
+
 		if ( 'create' === $action || 'update' === $action ) {
 			return $this->process_upsert_job( $job );
 		}
 
 		return $this->processing_result( 'failed', __( 'Unknown processing action.', 'as-content-stream' ) );
+	}
+
+	/**
+	 * Discover or create one destination mapping.
+	 *
+	 * @param object $job Processing job.
+	 * @return array<string,string>
+	 */
+	private function process_discovery_job( $job ) {
+		$payload = $this->hydrate_processing_payload( $job, $this->decode_queue_payload( $job->payload ) );
+		$source_uuid = isset( $payload['source_uuid'] ) ? sanitize_text_field( $payload['source_uuid'] ) : '';
+
+		if ( '' === $source_uuid ) {
+			return $this->processing_result( 'failed', __( 'Missing source stream UUID.', 'as-content-stream' ) );
+		}
+
+		$restore = get_current_blog_id() !== (int) $job->target_blog_id;
+		if ( $restore ) {
+			switch_to_blog( (int) $job->target_blog_id );
+		}
+
+		$legacy_id = $this->find_legacy_destination_post_id( $job, $payload );
+		if ( is_wp_error( $legacy_id ) ) {
+			if ( $restore ) {
+				restore_current_blog();
+			}
+			return $this->processing_result( 'failed', $legacy_id->get_error_message() );
+		}
+
+		if ( $legacy_id ) {
+			if ( 'trash' === get_post_status( $legacy_id ) ) {
+				if ( $restore ) {
+					restore_current_blog();
+				}
+				return $this->processing_result( 'skipped', __( 'Legacy destination exists in trash; skipped discovery.', 'as-content-stream' ) );
+			}
+
+			$link_id = $this->upsert_link( $job, (int) $legacy_id, $payload );
+			if ( $link_id ) {
+				$this->set_processing_job_link_id( (int) $job->id, $link_id );
+			}
+
+			if ( $restore ) {
+				restore_current_blog();
+			}
+			return $this->processing_result( 'complete', sprintf( __( 'Existing destination mapped from legacy metadata. #%d', 'as-content-stream' ), (int) $legacy_id ) );
+		}
+
+		$slug_id = $this->find_destination_post_id( $job, $payload );
+		if ( $slug_id ) {
+			if ( 'trash' === get_post_status( $slug_id ) ) {
+				if ( $restore ) {
+					restore_current_blog();
+				}
+				return $this->processing_result( 'skipped', __( 'Slug-matched destination exists in trash; skipped discovery.', 'as-content-stream' ) );
+			}
+
+			$link_id = $this->upsert_link( $job, (int) $slug_id, $payload );
+			if ( $link_id ) {
+				$this->set_processing_job_link_id( (int) $job->id, $link_id );
+			}
+
+			if ( $restore ) {
+				restore_current_blog();
+			}
+			return $this->processing_result( 'complete', sprintf( __( 'Existing destination mapped from slug. #%d', 'as-content-stream' ), (int) $slug_id ) );
+		}
+
+		if ( $restore ) {
+			restore_current_blog();
+		}
+
+		return $this->process_upsert_job( $job );
 	}
 
 	/**
@@ -1343,6 +1457,12 @@ class AS_Content_Stream {
 
 		$result_id = $this->copy_source_post_sql_to_destination( $job, (int) $author_id, (int) $existing_id );
 		if ( $result_id ) {
+			$link_id = $this->upsert_link( $job, (int) $result_id, $payload );
+			if ( $link_id ) {
+				$this->set_processing_job_link_id( (int) $job->id, $link_id );
+			}
+			$this->set_wpml_language_for_destination( (int) $result_id, $job );
+
 			$dependency = $this->ensure_meta_dependencies_for_job( $job );
 			if ( $dependency ) {
 				if ( $restore ) {
@@ -1373,12 +1493,6 @@ class AS_Content_Stream {
 			}
 			return $this->processing_result( 'failed', __( 'Unable to copy source post SQL to destination.', 'as-content-stream' ) );
 		}
-
-		$link_id = $this->upsert_link( $job, (int) $result_id, $payload );
-		if ( $link_id ) {
-			$this->set_processing_job_link_id( (int) $job->id, $link_id );
-		}
-		$this->set_wpml_language_for_destination( (int) $result_id, $job );
 
 		if ( $restore ) {
 			restore_current_blog();
@@ -1530,8 +1644,108 @@ class AS_Content_Stream {
 			return 0;
 		}
 
-		$post = get_page_by_path( $slug, OBJECT, sanitize_key( $job->post_type ) );
-		return $post instanceof WP_Post ? (int) $post->ID : 0;
+		$post_type = sanitize_key( $job->post_type );
+		$post = get_page_by_path( $slug, OBJECT, $post_type );
+		if ( $post instanceof WP_Post && $this->post_matches_target_language_current_site( (int) $post->ID, $post_type, sanitize_key( $job->target_language ) ) ) {
+			return (int) $post->ID;
+		}
+
+		return 0;
+	}
+
+	/**
+	 * Find a destination post using legacy WFC Push Post metadata.
+	 *
+	 * @param object              $job Processing job.
+	 * @param array<string,mixed> $payload Queue payload.
+	 * @return int|WP_Error
+	 */
+	private function find_legacy_destination_post_id( $job, $payload ) {
+		unset( $payload );
+
+		$source_blog_id = (int) $job->source_blog_id;
+		$source_post_id = (int) $job->source_post_id;
+		$post_type = sanitize_key( $job->post_type );
+		$target_language = sanitize_key( $job->target_language );
+		$matches = get_posts(
+			array(
+				'post_type'        => $post_type,
+				'post_status'      => 'any',
+				'posts_per_page'   => -1,
+				'fields'           => 'ids',
+				'suppress_filters' => true,
+				'meta_query'       => array(
+					'relation' => 'AND',
+					array(
+						'key'   => 'wfc_source_record_id',
+						'value' => $source_post_id,
+					),
+					array(
+						'key'   => 'wfc_source_instance_id',
+						'value' => $source_blog_id,
+					),
+				),
+			)
+		);
+
+		if ( empty( $matches ) ) {
+			$matches = get_posts(
+				array(
+					'post_type'        => $post_type,
+					'post_status'      => 'any',
+					'posts_per_page'   => -1,
+					'fields'           => 'ids',
+					'suppress_filters' => true,
+					'meta_key'         => 'wfc_source_record_id',
+					'meta_value'       => $source_post_id,
+				)
+			);
+		}
+
+		$matches = array_values(
+			array_filter(
+				array_map( 'absint', (array) $matches ),
+				function ( $post_id ) use ( $post_type, $target_language ) {
+					return $this->post_matches_target_language_current_site( $post_id, $post_type, $target_language );
+				}
+			)
+		);
+
+		if ( count( $matches ) > 1 ) {
+			return new WP_Error( 'as_content_stream_legacy_conflict', __( 'Multiple legacy destination matches found.', 'as-content-stream' ) );
+		}
+
+		return empty( $matches ) ? 0 : (int) $matches[0];
+	}
+
+	/**
+	 * Check the current site's WPML language for a post.
+	 *
+	 * @param int    $post_id Post ID.
+	 * @param string $post_type Post type.
+	 * @param string $target_language Target language.
+	 * @return bool
+	 */
+	private function post_matches_target_language_current_site( $post_id, $post_type, $target_language ) {
+		if ( '' === $target_language ) {
+			return true;
+		}
+
+		global $wpdb;
+		$table_name = $wpdb->prefix . 'icl_translations';
+		if ( ! $this->table_exists( $table_name ) ) {
+			return true;
+		}
+
+		$language = $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT language_code FROM {$table_name} WHERE element_id = %d AND element_type = %s LIMIT 1",
+				$post_id,
+				'post_' . sanitize_key( $post_type )
+			)
+		);
+
+		return '' === (string) $language || sanitize_key( $language ) === $target_language;
 	}
 
 	/**
@@ -3474,6 +3688,227 @@ class AS_Content_Stream {
 	}
 
 	/**
+	 * Refresh discovery parent queue rows for unmapped published source content.
+	 *
+	 * @return void
+	 */
+	private function refresh_discovery_queue() {
+		if ( ! is_multisite() || ! is_main_site() ) {
+			return;
+		}
+
+		foreach ( $this->get_discovery_source_items() as $item ) {
+			if ( $this->source_queue_action_exists( (int) $item['source_blog_id'], (int) $item['source_post_id'], sanitize_key( $item['post_type'] ), 'discover' ) ) {
+				continue;
+			}
+
+			$this->insert_queue_item(
+				array(
+					'action'          => 'discover',
+					'source_blog_id'  => (int) $item['source_blog_id'],
+					'source_post_id'  => (int) $item['source_post_id'],
+					'target_blog_id'  => 0,
+					'target_language' => '',
+					'post_type'       => sanitize_key( $item['post_type'] ),
+					'payload'         => array(
+						'source_uuid'        => $this->get_or_create_source_uuid( (int) $item['source_blog_id'], (int) $item['source_post_id'] ),
+						'post_title'         => $item['post_title'],
+						'post_status'        => 'publish',
+						'post_name'          => $item['post_name'],
+						'post_date'          => $item['post_date'],
+						'post_date_gmt'      => $item['post_date_gmt'],
+						'post_modified'      => $item['post_modified'],
+						'post_modified_gmt'  => $item['post_modified_gmt'],
+						'original_post_name' => $item['post_name'],
+					),
+				)
+			);
+		}
+	}
+
+	/**
+	 * Check whether Discovery Queue should be shown.
+	 *
+	 * @return bool
+	 */
+	private function has_discovery_queue_items() {
+		global $wpdb;
+
+		return (bool) $wpdb->get_var(
+			$wpdb->prepare(
+				'SELECT id FROM ' . self::queue_table_name() . ' WHERE action = %s AND status <> %s LIMIT 1',
+				'discover',
+				'complete'
+			)
+		);
+	}
+
+	/**
+	 * Get Discovery tile stats by source post type.
+	 *
+	 * @return array<int,array<string,int|string>>
+	 */
+	private function get_discovery_stats() {
+		$stats = array();
+		$targets = $this->get_discovery_targets();
+		$target_count = count( $targets );
+
+		if ( 0 === $target_count ) {
+			return $stats;
+		}
+
+		foreach ( $this->get_published_source_posts() as $post ) {
+			$post_type = sanitize_key( $post['post_type'] );
+			if ( ! isset( $stats[ $post_type ] ) ) {
+				$stats[ $post_type ] = array(
+					'post_type' => $post_type,
+					'published' => 0,
+					'mapped'    => 0,
+					'unmapped'  => 0,
+				);
+			}
+
+			$stats[ $post_type ]['published']++;
+			if ( $this->source_post_has_full_discovery_map( (int) $post['ID'], $post_type, $targets ) ) {
+				$stats[ $post_type ]['mapped']++;
+			} else {
+				$stats[ $post_type ]['unmapped']++;
+			}
+		}
+
+		return array_values( $stats );
+	}
+
+	/**
+	 * Get published source content requiring Discovery.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function get_discovery_source_items() {
+		$targets = $this->get_discovery_targets();
+		if ( empty( $targets ) ) {
+			return array();
+		}
+
+		$items = array();
+		foreach ( $this->get_published_source_posts() as $post ) {
+			if ( ! $this->source_post_has_full_discovery_map( (int) $post['ID'], sanitize_key( $post['post_type'] ), $targets ) ) {
+				$items[] = array(
+					'source_blog_id'    => get_main_site_id(),
+					'source_post_id'    => (int) $post['ID'],
+					'post_type'         => sanitize_key( $post['post_type'] ),
+					'post_title'        => $post['post_title'],
+					'post_name'         => $post['post_name'],
+					'post_date'         => $post['post_date'],
+					'post_date_gmt'     => $post['post_date_gmt'],
+					'post_modified'     => $post['post_modified'],
+					'post_modified_gmt' => $post['post_modified_gmt'],
+				);
+			}
+		}
+
+		return $items;
+	}
+
+	/**
+	 * Get active discovery destination targets.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function get_discovery_targets() {
+		$language_counts = $this->get_language_counts( $this->discover_sites() );
+		$target_language = $this->get_effective_target_language( $language_counts );
+
+		return $this->get_processing_targets( $target_language );
+	}
+
+	/**
+	 * Get published streamable posts from the core site.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function get_published_source_posts() {
+		global $wpdb;
+
+		$table = $wpdb->get_blog_prefix( get_main_site_id() ) . 'posts';
+		$rows = $wpdb->get_results(
+			"SELECT ID, post_type, post_title, post_name, post_date, post_date_gmt, post_modified, post_modified_gmt FROM {$table} WHERE post_status = 'publish' ORDER BY post_type ASC, post_title ASC",
+			ARRAY_A
+		);
+
+		return array_values(
+			array_filter(
+				(array) $rows,
+				function ( $row ) {
+					return $this->is_streamable_post_type( isset( $row['post_type'] ) ? $row['post_type'] : '' );
+				}
+			)
+		);
+	}
+
+	/**
+	 * Check whether a source post is mapped to every current target.
+	 *
+	 * @param int                       $source_post_id Source post ID.
+	 * @param string                    $post_type Source post type.
+	 * @param array<int,array<string,mixed>> $targets Processing targets.
+	 * @return bool
+	 */
+	private function source_post_has_full_discovery_map( $source_post_id, $post_type, $targets ) {
+		global $wpdb;
+
+		if ( empty( $targets ) ) {
+			return true;
+		}
+
+		$target_ids = array_map(
+			static function ( $target ) {
+				return (int) $target['blog_id'];
+			},
+			$targets
+		);
+		$language_counts = $this->get_language_counts( $this->discover_sites() );
+		$target_language = $this->get_effective_target_language( $language_counts );
+		$placeholders = implode( ',', array_fill( 0, count( $target_ids ), '%d' ) );
+		$query_args = array_merge(
+			array( get_main_site_id(), $source_post_id, sanitize_key( $post_type ), sanitize_key( $target_language ) ),
+			$target_ids
+		);
+		$mapped = (int) $wpdb->get_var(
+			$wpdb->prepare(
+				'SELECT COUNT(DISTINCT target_blog_id) FROM ' . self::links_table_name() . " WHERE source_blog_id = %d AND source_post_id = %d AND source_post_type = %s AND target_language = %s AND status = 'active' AND target_blog_id IN ({$placeholders})",
+				$query_args
+			)
+		);
+
+		return $mapped >= count( $target_ids );
+	}
+
+	/**
+	 * Check whether a non-complete source queue action already exists.
+	 *
+	 * @param int    $source_blog_id Source blog ID.
+	 * @param int    $source_post_id Source post ID.
+	 * @param string $post_type Post type.
+	 * @param string $action Action.
+	 * @return bool
+	 */
+	private function source_queue_action_exists( $source_blog_id, $source_post_id, $post_type, $action ) {
+		global $wpdb;
+
+		return (bool) $wpdb->get_var(
+			$wpdb->prepare(
+				'SELECT id FROM ' . self::queue_table_name() . ' WHERE status <> %s AND source_blog_id = %d AND source_post_id = %d AND action = %s AND post_type = %s AND target_blog_id = 0 LIMIT 1',
+				'complete',
+				$source_blog_id,
+				$source_post_id,
+				sanitize_key( $action ),
+				sanitize_key( $post_type )
+			)
+		);
+	}
+
+	/**
 	 * Get queue rows.
 	 *
 	 * @return array<int,object>
@@ -3733,6 +4168,22 @@ class AS_Content_Stream {
 		}
 
 		return implode( ', ', $parts );
+	}
+
+	/**
+	 * Format an internal stream action for display.
+	 *
+	 * @param string $action Action key.
+	 * @return string
+	 */
+	private function format_action_label( $action ) {
+		$action = sanitize_key( $action );
+
+		if ( 'discover' === $action ) {
+			return __( 'Discovery', 'as-content-stream' );
+		}
+
+		return ucfirst( $action );
 	}
 
 	/**
