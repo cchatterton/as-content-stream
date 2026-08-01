@@ -19,10 +19,15 @@ class AS_Content_Stream {
 	const OPTION_TELEMETRY       = 'as_content_stream_telemetry';
 	const NONCE_SETTINGS         = 'as_content_stream_settings';
 	const NONCE_QUEUE            = 'as_content_stream_queue';
+	const NONCE_LOG              = 'as_content_stream_log';
 	const NONCE_HEARTBEAT        = 'as_content_stream_heartbeat';
 	const NONCE_TEST_TICK        = 'as_content_stream_test_tick';
 	const PAGE_SLUG              = 'as-content-stream';
 	const CRON_HOOK              = 'as_content_stream_process_tick';
+	const STREAM_AUTHOR_LOGIN    = 'as_content_stream';
+	const STREAM_AUTHOR_EMAIL    = 'as-content-stream@invalid.local';
+	const STREAM_AUTHOR_ROLE     = 'integration';
+	const STREAM_AUTHOR_META     = '_as_content_stream_user';
 
 	/**
 	 * Singleton instance.
@@ -81,11 +86,13 @@ class AS_Content_Stream {
 		add_action( 'admin_menu', array( $this, 'register_core_site_menu' ) );
 		add_action( 'admin_post_as_content_stream_save_settings', array( $this, 'save_settings' ) );
 		add_action( 'admin_post_as_content_stream_clear_queue', array( $this, 'clear_queue' ) );
+		add_action( 'admin_post_as_content_stream_clear_log', array( $this, 'clear_log' ) );
 		add_action( 'admin_post_as_content_stream_test_tick', array( $this, 'run_test_tick' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ) );
 		add_action( 'wp_ajax_as_content_stream_heartbeat', array( $this, 'ajax_heartbeat' ) );
 		add_action( self::CRON_HOOK, array( $this, 'process_tick' ) );
 		add_filter( 'cron_schedules', array( $this, 'add_cron_schedules' ) );
+		add_filter( 'authenticate', array( $this, 'block_stream_author_authentication' ), 30, 3 );
 
 		add_action( 'wp_after_insert_post', array( $this, 'capture_after_insert_post' ), 20, 4 );
 		add_action( 'wp_trash_post', array( $this, 'capture_trash_post' ), 20, 2 );
@@ -282,6 +289,9 @@ class AS_Content_Stream {
 			if ( isset( $_GET['queue_cleared'] ) ) {
 				echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Pending queue items cleared.', 'as-content-stream' ) . '</p></div>';
 			}
+			if ( isset( $_GET['log_cleared'] ) ) {
+				echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Processing log cleared.', 'as-content-stream' ) . '</p></div>';
+			}
 
 			switch ( $active_tab ) {
 				case 'settings':
@@ -411,6 +421,7 @@ class AS_Content_Stream {
 				return $site['wpml_active'];
 			}
 		);
+		$stream_author_status = $this->ensure_stream_author_for_sites( $wpml_sites );
 		?>
 		<div class="as-content-grid">
 			<div class="as-content-panel">
@@ -460,6 +471,16 @@ class AS_Content_Stream {
 				<p><strong><?php esc_html_e( 'WPML active sites:', 'as-content-stream' ); ?></strong> <?php echo esc_html( count( $wpml_sites ) ); ?></p>
 				<p><strong><?php esc_html_e( 'Pending queue items:', 'as-content-stream' ); ?></strong> <?php echo esc_html( isset( $queue_counts['pending'] ) ? $queue_counts['pending'] : 0 ); ?></p>
 				<p><strong><?php esc_html_e( 'Processing jobs:', 'as-content-stream' ); ?></strong> <?php echo esc_html( $this->format_counts( $processing_counts ) ); ?></p>
+			</div>
+			<div class="as-content-panel">
+				<h2><?php esc_html_e( 'Stream Author', 'as-content-stream' ); ?></h2>
+				<p><strong><?php esc_html_e( 'User:', 'as-content-stream' ); ?></strong> <?php echo esc_html( $stream_author_status['user_label'] ); ?></p>
+				<p><strong><?php esc_html_e( 'Role:', 'as-content-stream' ); ?></strong> <?php echo esc_html( self::STREAM_AUTHOR_ROLE ); ?></p>
+				<p><strong><?php esc_html_e( 'Sites checked:', 'as-content-stream' ); ?></strong> <?php echo esc_html( (int) $stream_author_status['checked'] ); ?></p>
+				<p><strong><?php esc_html_e( 'Sites ready:', 'as-content-stream' ); ?></strong> <?php echo esc_html( (int) $stream_author_status['ready'] ); ?></p>
+				<?php if ( ! empty( $stream_author_status['messages'] ) ) : ?>
+					<p class="description"><?php echo esc_html( implode( ' ', $stream_author_status['messages'] ) ); ?></p>
+				<?php endif; ?>
 			</div>
 			<div class="as-content-panel">
 				<h2><?php esc_html_e( 'Heartbeat', 'as-content-stream' ); ?></h2>
@@ -633,6 +654,13 @@ class AS_Content_Stream {
 	private function render_log_tab() {
 		$items = $this->get_processing_queue_items( true );
 		?>
+		<div class="as-content-queue-actions">
+			<p><?php esc_html_e( 'Showing the latest 100 completed processing jobs.', 'as-content-stream' ); ?></p>
+			<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_clear_log' ) ); ?>">
+				<?php wp_nonce_field( self::NONCE_LOG ); ?>
+				<?php submit_button( __( 'Clear Log', 'as-content-stream' ), 'secondary', 'submit', false ); ?>
+			</form>
+		</div>
 		<table class="widefat striped as-content-queue">
 			<thead>
 				<tr>
@@ -1039,6 +1067,26 @@ class AS_Content_Stream {
 		$wpdb->delete( self::queue_table_name(), array( 'status' => 'pending' ), array( '%s' ) );
 
 		wp_safe_redirect( $this->admin_url( array( 'tab' => 'create_queue', 'queue_cleared' => 1 ) ) );
+		exit;
+	}
+
+	/**
+	 * Clear terminal processing log rows.
+	 *
+	 * @return void
+	 */
+	public function clear_log() {
+		if ( ! is_multisite() || ! is_main_site() || ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You do not have permission to update AS Content Stream.', 'as-content-stream' ) );
+		}
+
+		check_admin_referer( self::NONCE_LOG );
+
+		global $wpdb;
+		self::create_processing_queue_table();
+		$wpdb->query( "DELETE FROM " . self::processing_queue_table_name() . " WHERE status IN ('complete', 'skipped', 'failed')" );
+
+		wp_safe_redirect( $this->admin_url( array( 'tab' => 'log', 'log_cleared' => 1 ) ) );
 		exit;
 	}
 
@@ -1783,6 +1831,157 @@ class AS_Content_Stream {
 
 		echo '<p><strong>' . esc_html( ucfirst( isset( $status['status'] ) ? $status['status'] : 'status' ) ) . ':</strong> ' . esc_html( $message ) . '</p>';
 		echo '<p class="description">' . esc_html( implode( ' | ', $details ) ) . '</p>';
+	}
+
+	/**
+	 * Ensure the integration role and stream author exist on destination WPML sites.
+	 *
+	 * @param array<int,array<string,mixed>> $sites Destination WPML sites.
+	 * @return array<string,mixed>
+	 */
+	private function ensure_stream_author_for_sites( $sites ) {
+		$status = array(
+			'checked'    => 0,
+			'ready'      => 0,
+			'user_id'    => 0,
+			'user_label' => self::STREAM_AUTHOR_LOGIN,
+			'messages'   => array(),
+		);
+
+		if ( ! is_multisite() || empty( $sites ) ) {
+			return $status;
+		}
+
+		$user_id = $this->ensure_stream_author_user();
+		if ( is_wp_error( $user_id ) ) {
+			$status['messages'][] = $user_id->get_error_message();
+			return $status;
+		}
+
+		$status['user_id']    = (int) $user_id;
+		$status['user_label'] = sprintf( '%s #%d', self::STREAM_AUTHOR_LOGIN, (int) $user_id );
+
+		foreach ( $sites as $site ) {
+			if ( empty( $site['wpml_active'] ) || empty( $site['blog_id'] ) ) {
+				continue;
+			}
+
+			$status['checked']++;
+			$result = $this->ensure_stream_author_on_site( (int) $site['blog_id'], (int) $user_id );
+
+			if ( is_wp_error( $result ) ) {
+				$status['messages'][] = sprintf(
+					/* translators: 1: site name, 2: error message. */
+					__( '%1$s: %2$s', 'as-content-stream' ),
+					isset( $site['name'] ) ? $site['name'] : $this->site_label( (int) $site['blog_id'] ),
+					$result->get_error_message()
+				);
+				continue;
+			}
+
+			$status['ready']++;
+		}
+
+		if ( 0 === (int) $status['checked'] ) {
+			$status['messages'][] = __( 'No active WPML destination sites found.', 'as-content-stream' );
+		} elseif ( (int) $status['ready'] === (int) $status['checked'] ) {
+			$status['messages'][] = __( 'All active WPML destination sites have the stream author ready.', 'as-content-stream' );
+		}
+
+		return $status;
+	}
+
+	/**
+	 * Ensure the global stream author user exists.
+	 *
+	 * @return int|WP_Error
+	 */
+	private function ensure_stream_author_user() {
+		$user_id = username_exists( self::STREAM_AUTHOR_LOGIN );
+
+		if ( $user_id ) {
+			update_user_meta( (int) $user_id, self::STREAM_AUTHOR_META, 1 );
+			return (int) $user_id;
+		}
+
+		$email_user_id = email_exists( self::STREAM_AUTHOR_EMAIL );
+		if ( $email_user_id ) {
+			update_user_meta( (int) $email_user_id, self::STREAM_AUTHOR_META, 1 );
+			return (int) $email_user_id;
+		}
+
+		$user_id = wp_insert_user(
+			array(
+				'user_login'   => self::STREAM_AUTHOR_LOGIN,
+				'user_pass'    => wp_generate_password( 64, true, true ),
+				'user_email'   => self::STREAM_AUTHOR_EMAIL,
+				'display_name' => __( 'AS Content Stream', 'as-content-stream' ),
+				'nickname'     => __( 'AS Content Stream', 'as-content-stream' ),
+				'description'  => __( 'System author for streamed content.', 'as-content-stream' ),
+				'role'         => '',
+			)
+		);
+
+		if ( is_wp_error( $user_id ) ) {
+			return $user_id;
+		}
+
+		update_user_meta( (int) $user_id, self::STREAM_AUTHOR_META, 1 );
+
+		return (int) $user_id;
+	}
+
+	/**
+	 * Ensure the role and stream author membership exist on a switched site.
+	 *
+	 * @param int $blog_id Blog ID.
+	 * @param int $user_id User ID.
+	 * @return true|WP_Error
+	 */
+	private function ensure_stream_author_on_site( $blog_id, $user_id ) {
+		$restore = get_current_blog_id() !== $blog_id;
+
+		if ( $restore ) {
+			switch_to_blog( $blog_id );
+		}
+
+		if ( ! get_role( self::STREAM_AUTHOR_ROLE ) ) {
+			add_role( self::STREAM_AUTHOR_ROLE, __( 'Integration', 'as-content-stream' ), array() );
+		}
+
+		$result = true;
+		if ( ! is_user_member_of_blog( $user_id, $blog_id ) ) {
+			$result = add_user_to_blog( $blog_id, $user_id, self::STREAM_AUTHOR_ROLE );
+		} else {
+			$user = new WP_User( $user_id, '', $blog_id );
+			if ( ! in_array( self::STREAM_AUTHOR_ROLE, (array) $user->roles, true ) ) {
+				$user->add_role( self::STREAM_AUTHOR_ROLE );
+			}
+		}
+
+		if ( $restore ) {
+			restore_current_blog();
+		}
+
+		return is_wp_error( $result ) ? $result : true;
+	}
+
+	/**
+	 * Block direct login for the system stream author.
+	 *
+	 * @param WP_User|WP_Error|null $user     Authenticated user.
+	 * @param string                $username Username.
+	 * @param string                $password Password.
+	 * @return WP_User|WP_Error|null
+	 */
+	public function block_stream_author_authentication( $user, $username, $password ) {
+		unset( $password );
+
+		if ( self::STREAM_AUTHOR_LOGIN === sanitize_user( $username, true ) ) {
+			return new WP_Error( 'as_content_stream_author_login_blocked', __( 'The AS Content Stream system author cannot log in.', 'as-content-stream' ) );
+		}
+
+		return $user;
 	}
 
 	/**

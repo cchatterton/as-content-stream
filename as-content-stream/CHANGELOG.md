@@ -2,6 +2,12 @@
 
 All notable changes to AS Content Stream are recorded here.
 
+## 0.1.20 - 2026-08-01
+
+- Added a Clear Log button for terminal processing jobs.
+- Clarified that the Log tab displays the latest 100 completed processing jobs.
+- Added a Settings-page scan that ensures the stream author user and integration role on active WPML destination sites.
+
 ## 0.1.19 - 2026-08-01
 
 - Added a Processing Queue tab for per-destination jobs.
