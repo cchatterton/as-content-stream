@@ -1369,7 +1369,7 @@ class AS_Content_Stream {
 	}
 
 	/**
-	 * Discover or create one destination mapping.
+	 * Discover one destination mapping.
 	 *
 	 * @param object $job Processing job.
 	 * @return array<string,string>
@@ -1438,7 +1438,77 @@ class AS_Content_Stream {
 			restore_current_blog();
 		}
 
-		return $this->process_upsert_job( $job );
+		$create_job_id = $this->create_missing_destination_job_for_discovery( $job, $payload );
+		if ( ! $create_job_id ) {
+			return $this->processing_result( 'failed', __( 'Unable to create blocking create job for missing destination.', 'as-content-stream' ) );
+		}
+
+		$this->block_processing_job( (int) $job->id, $create_job_id );
+
+		return $this->processing_result(
+			'blocked',
+			sprintf(
+				/* translators: %d: create job ID. */
+				__( 'No destination match found; created blocking create job #%d.', 'as-content-stream' ),
+				$create_job_id
+			)
+		);
+	}
+
+	/**
+	 * Create a normal create job when Discovery cannot find a destination.
+	 *
+	 * @param object              $discovery_job Discovery job.
+	 * @param array<string,mixed> $payload Discovery payload.
+	 * @return int
+	 */
+	private function create_missing_destination_job_for_discovery( $discovery_job, $payload ) {
+		global $wpdb;
+
+		self::create_processing_queue_table();
+
+		$existing = $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT id FROM " . self::processing_queue_table_name() . " WHERE status <> 'complete' AND action = %s AND source_blog_id = %d AND source_post_id = %d AND target_blog_id = %d AND target_language = %s LIMIT 1",
+				'create',
+				(int) $discovery_job->source_blog_id,
+				(int) $discovery_job->source_post_id,
+				(int) $discovery_job->target_blog_id,
+				sanitize_key( $discovery_job->target_language )
+			)
+		);
+
+		if ( $existing ) {
+			return (int) $existing;
+		}
+
+		$payload['target_language'] = sanitize_key( $discovery_job->target_language );
+		$wpdb->insert(
+			self::processing_queue_table_name(),
+			array(
+				'created_at'      => current_time( 'mysql', true ),
+				'parent_queue_id' => (int) $discovery_job->parent_queue_id,
+				'link_id'         => 0,
+				'blocked_by'      => 0,
+				'priority'        => (int) $discovery_job->priority + 10,
+				'action'          => 'create',
+				'status'          => 'pending',
+				'source_blog_id'  => (int) $discovery_job->source_blog_id,
+				'source_post_id'  => (int) $discovery_job->source_post_id,
+				'target_blog_id'  => (int) $discovery_job->target_blog_id,
+				'target_language' => sanitize_key( $discovery_job->target_language ),
+				'post_type'       => sanitize_key( $discovery_job->post_type ),
+				'payload'         => wp_json_encode( $payload ),
+				'result_message'  => sprintf(
+					/* translators: %d: discovery job ID. */
+					__( 'Create destination for Discovery job #%d.', 'as-content-stream' ),
+					(int) $discovery_job->id
+				),
+			),
+			array( '%s', '%d', '%d', '%d', '%d', '%s', '%s', '%d', '%d', '%d', '%s', '%s', '%s', '%s' )
+		);
+
+		return (int) $wpdb->insert_id;
 	}
 
 	/**

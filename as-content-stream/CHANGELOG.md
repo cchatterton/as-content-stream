@@ -2,6 +2,12 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.39 - 2026-08-01
+
+- Changed Discovery to map only and no longer create destination content directly.
+- When Discovery cannot find a destination, it creates a normal blocking create job and waits for it to complete.
+- Keeps related-content dependency lookup and blocking inside the normal create/update processing path.
+
 ## 0.1.38 - 2026-08-01
 
 - Seeded Discovery once during plugin activation from the core site.
