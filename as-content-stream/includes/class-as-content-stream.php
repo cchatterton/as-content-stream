@@ -541,15 +541,15 @@ class AS_Content_Stream {
 					<div class="as-content-panel-body">
 						<label class="screen-reader-text" for="as-content-target-language"><?php esc_html_e( 'Target language', 'as-content-stream' ); ?></label>
 						<select id="as-content-target-language" class="as-content-select" name="target_language">
-							<?php if ( empty( $language_counts ) ) : ?>
-								<option value=""><?php esc_html_e( 'No destination languages available', 'as-content-stream' ); ?></option>
-							<?php else : ?>
-								<?php foreach ( $language_counts as $language => $count ) : ?>
-									<option value="<?php echo esc_attr( $language ); ?>" <?php selected( $target_language, $language ); ?>>
-										<?php echo esc_html( sprintf( '%s (%d)', $language, $count ) ); ?>
-									</option>
-								<?php endforeach; ?>
-							<?php endif; ?>
+						<?php if ( empty( $language_counts ) ) : ?>
+							<option value=""><?php esc_html_e( 'No destination languages available', 'as-content-stream' ); ?></option>
+						<?php else : ?>
+							<?php foreach ( $language_counts as $language => $count ) : ?>
+								<option value="<?php echo esc_attr( $language ); ?>" <?php selected( $target_language, $language ); ?>>
+									<?php echo esc_html( sprintf( '%s (%d)', $language, $count ) ); ?>
+								</option>
+							<?php endforeach; ?>
+						<?php endif; ?>
 						</select>
 					</div>
 					<div class="as-content-panel-actions">
@@ -561,8 +561,8 @@ class AS_Content_Stream {
 				<h2><?php esc_html_e( 'Network Status', 'as-content-stream' ); ?></h2>
 				<table class="as-content-metric-table">
 					<tbody>
-						<tr><th scope="row"><?php esc_html_e( 'Sites', 'as-content-stream' ); ?></th><td><?php echo esc_html( count( $sites ) ); ?></td></tr>
-						<tr><th scope="row"><?php esc_html_e( 'WPML active sites', 'as-content-stream' ); ?></th><td><?php echo esc_html( count( $wpml_sites ) ); ?></td></tr>
+						<tr><th scope="row"><?php esc_html_e( 'Sites', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_sites"><?php echo esc_html( count( $sites ) ); ?></td></tr>
+						<tr><th scope="row"><?php esc_html_e( 'WPML active sites', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_wpml_sites"><?php echo esc_html( count( $wpml_sites ) ); ?></td></tr>
 						<tr><th scope="row"><?php esc_html_e( 'Discovery Queue', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_discovery"><?php echo esc_html( isset( $queue_action_counts['discover'] ) ? $queue_action_counts['discover'] : 0 ); ?></td></tr>
 						<tr><th scope="row"><?php esc_html_e( 'Create Queue', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_create"><?php echo esc_html( isset( $queue_action_counts['create'] ) ? $queue_action_counts['create'] : 0 ); ?></td></tr>
 						<tr><th scope="row"><?php esc_html_e( 'Update Queue', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_update"><?php echo esc_html( isset( $queue_action_counts['update'] ) ? $queue_action_counts['update'] : 0 ); ?></td></tr>
@@ -618,20 +618,62 @@ class AS_Content_Stream {
 		</div>
 		<script>
 			(function () {
-				var root = document.getElementById('as-content-heartbeat');
-				if (!root || !window.ajaxurl) {
+				var heartbeat = document.getElementById('as-content-heartbeat');
+				var root = document.querySelector('.as-content-settings-grid');
+				if (!heartbeat || !root || !window.ajaxurl) {
 					return;
 				}
 				function setText(name, value) {
 					var node = root.querySelector('[data-as-heartbeat="' + name + '"]');
-					if (node) {
+					if (node && node.textContent !== String(value)) {
 						node.textContent = value;
+						node.classList.remove('as-content-value-changed');
+						window.requestAnimationFrame(function () {
+							node.classList.add('as-content-value-changed');
+						});
+					}
+				}
+				function updateTargetLanguages(languages, selectedLanguage) {
+					var select = root.querySelector('#as-content-target-language');
+					if (!select || !languages) {
+						return;
+					}
+					var currentValue = select.value;
+					var languageKeys = Object.keys(languages);
+					var existingKeys = Array.prototype.map.call(select.options, function (option) {
+						return option.value;
+					});
+					if (languageKeys.join('|') !== existingKeys.join('|')) {
+						select.innerHTML = '';
+						if (!languageKeys.length) {
+							var emptyOption = document.createElement('option');
+							emptyOption.value = '';
+							emptyOption.textContent = '<?php echo esc_js( __( 'No destination languages available', 'as-content-stream' ) ); ?>';
+							select.appendChild(emptyOption);
+						}
+						languageKeys.forEach(function (language) {
+							var option = document.createElement('option');
+							option.value = language;
+							option.textContent = languages[language];
+							select.appendChild(option);
+						});
+					} else {
+						Array.prototype.forEach.call(select.options, function (option) {
+							if (languages[option.value] && option.textContent !== languages[option.value]) {
+								option.textContent = languages[option.value];
+							}
+						});
+					}
+					if (currentValue && languages[currentValue]) {
+						select.value = currentValue;
+					} else if (selectedLanguage && languages[selectedLanguage]) {
+						select.value = selectedLanguage;
 					}
 				}
 				function refresh() {
 					var data = new window.FormData();
 					data.append('action', 'as_content_stream_heartbeat');
-					data.append('nonce', root.getAttribute('data-nonce'));
+					data.append('nonce', heartbeat.getAttribute('data-nonce'));
 					window.fetch(window.ajaxurl, { method: 'POST', credentials: 'same-origin', body: data })
 						.then(function (response) { return response.json(); })
 						.then(function (response) {
@@ -651,6 +693,9 @@ class AS_Content_Stream {
 							setText('status_processing', status.status_processing);
 							setText('status_streamed', status.status_streamed);
 							setText('status_log', status.status_log);
+							setText('status_sites', status.status_sites);
+							setText('status_wpml_sites', status.status_wpml_sites);
+							updateTargetLanguages(status.target_language_labels, status.target_language);
 							var parentBar = root.querySelector('[data-as-heartbeat-bar="parent"]');
 							if (parentBar) {
 								parentBar.style.width = status.parent_pressure_percent + '%';
@@ -662,7 +707,8 @@ class AS_Content_Stream {
 						})
 						.catch(function () {});
 				}
-				window.setInterval(refresh, 2000);
+				refresh();
+				window.setInterval(refresh, 1000);
 			}());
 		</script>
 		<?php
@@ -4454,6 +4500,19 @@ class AS_Content_Stream {
 		$queue_counts = $this->get_queue_counts();
 		$processing_counts = $this->get_processing_queue_counts();
 		$queue_action_counts = $this->get_queue_action_counts();
+		$sites = $this->discover_sites();
+		$wpml_sites = array_filter(
+			$sites,
+			static function ( $site ) {
+				return $site['wpml_active'];
+			}
+		);
+		$language_counts = $this->get_language_counts( $sites );
+		$target_language = $this->get_effective_target_language( $language_counts );
+		$target_language_labels = array();
+		foreach ( $language_counts as $language => $count ) {
+			$target_language_labels[ $language ] = sprintf( '%s (%d)', $language, $count );
+		}
 		$current_source_id = isset( $telemetry['current_source_id'] ) ? (int) $telemetry['current_source_id'] : 0;
 		$parent_pending = isset( $queue_counts['pending'] ) ? (int) $queue_counts['pending'] : 0;
 		$parent_in_progress = isset( $queue_counts['in_progress'] ) ? (int) $queue_counts['in_progress'] : 0;
@@ -4486,6 +4545,10 @@ class AS_Content_Stream {
 			'status_processing'      => $this->get_processing_queue_open_count(),
 			'status_streamed'        => $this->get_streamed_content_count(),
 			'status_log'             => $this->get_processing_log_count(),
+			'status_sites'           => count( $sites ),
+			'status_wpml_sites'      => count( $wpml_sites ),
+			'target_language'        => $target_language,
+			'target_language_labels' => $target_language_labels,
 		);
 	}
 

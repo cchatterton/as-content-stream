@@ -2,6 +2,14 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.46 - 2026-08-01
+
+- Refreshed every Settings dashboard tile from the heartbeat AJAX call once per second.
+- Added live updates for Network Status site counts, queue totals, Processing Queue totals, Streamed Content, Log, and Heartbeat gauges.
+- Kept the Target Language picklist in sync with current destination language counts without requiring a page reload.
+- Added a subtle value-change pulse so live dashboard updates are easier to spot.
+- Matched Settings tile action button widths.
+
 ## 0.1.45 - 2026-08-01
 
 - Matched the Target Language action button width with the other Settings tile actions.

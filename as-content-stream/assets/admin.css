@@ -68,9 +68,9 @@
 }
 
 .as-content-panel .submit input {
-	align-self: flex-start;
+	align-self: stretch;
 	min-width: 132px;
-	width: auto !important;
+	width: 100% !important;
 }
 
 .as-content-panel-actions .button {
@@ -92,7 +92,6 @@
 	min-height: 30px;
 	padding-left: 16px;
 	padding-right: 16px;
-	width: auto !important;
 }
 
 .as-content-metric-table {
@@ -122,6 +121,19 @@
 	color: #1d2327;
 	text-align: right;
 	word-break: normal;
+}
+
+.as-content-value-changed {
+	animation: as-content-value-pulse 450ms ease;
+}
+
+@keyframes as-content-value-pulse {
+	0% {
+		color: #2271b1;
+	}
+	100% {
+		color: #1d2327;
+	}
 }
 
 .as-content-heartbeat-meta {
