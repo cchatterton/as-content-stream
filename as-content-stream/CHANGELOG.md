@@ -2,6 +2,13 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.36 - 2026-08-01
+
+- Limited Discovery to public post types currently registered on the core site.
+- Cleaned stale Discovery queue rows for non-public or inactive post types when the admin page loads.
+- Added a manual Re-run Discovery button to clear and rebuild Discovery queue rows.
+- Increased the Discovery queue view and sorted it by post type/source ID so tile counts are easier to reconcile with rows.
+
 ## 0.1.35 - 2026-08-01
 
 - Added a temporary Discovery Queue tab for published source content missing full Streamed Content coverage.

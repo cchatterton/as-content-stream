@@ -89,6 +89,7 @@ class AS_Content_Stream {
 		add_action( 'admin_post_as_content_stream_save_settings', array( $this, 'save_settings' ) );
 		add_action( 'admin_post_as_content_stream_clear_queue', array( $this, 'clear_queue' ) );
 		add_action( 'admin_post_as_content_stream_run_queue_item', array( $this, 'run_queue_item' ) );
+		add_action( 'admin_post_as_content_stream_rerun_discovery', array( $this, 'rerun_discovery' ) );
 		add_action( 'admin_post_as_content_stream_clear_log', array( $this, 'clear_log' ) );
 		add_action( 'admin_post_as_content_stream_run_processing_job', array( $this, 'run_processing_job' ) );
 		add_action( 'admin_post_as_content_stream_delete_processing_job', array( $this, 'delete_processing_job' ) );
@@ -362,6 +363,9 @@ class AS_Content_Stream {
 			if ( isset( $_GET['queue_cleared'] ) ) {
 				echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Pending queue items cleared.', 'as-content-stream' ) . '</p></div>';
 			}
+			if ( isset( $_GET['discovery_refreshed'] ) ) {
+				echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Discovery queue rebuilt.', 'as-content-stream' ) . '</p></div>';
+			}
 			if ( isset( $_GET['log_cleared'] ) ) {
 				echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Processing log cleared.', 'as-content-stream' ) . '</p></div>';
 			}
@@ -596,8 +600,8 @@ class AS_Content_Stream {
 	 *
 	 * @return void
 	 */
-	private function render_queue_tab( $action ) {
-		$items  = $this->get_queue_items( $action );
+	private function render_queue_tab( $action, $limit = 100 ) {
+		$items  = $this->get_queue_items( $action, $limit );
 		$counts = $this->get_queue_counts();
 		?>
 		<div class="as-content-queue-actions">
@@ -670,6 +674,12 @@ class AS_Content_Stream {
 	private function render_discovery_tab() {
 		$stats = $this->get_discovery_stats();
 		?>
+		<div class="as-content-queue-actions">
+			<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_rerun_discovery' ) ); ?>">
+				<?php wp_nonce_field( self::NONCE_QUEUE ); ?>
+				<?php submit_button( __( 'Re-run Discovery', 'as-content-stream' ), 'secondary', 'submit', false ); ?>
+			</form>
+		</div>
 		<div class="as-content-grid as-content-discovery-grid">
 			<?php if ( empty( $stats ) ) : ?>
 				<div class="as-content-panel">
@@ -687,7 +697,7 @@ class AS_Content_Stream {
 			<?php endforeach; ?>
 		</div>
 		<?php
-		$this->render_queue_tab( 'discover' );
+		$this->render_queue_tab( 'discover', 1000 );
 	}
 
 	/**
@@ -2877,6 +2887,43 @@ class AS_Content_Stream {
 	}
 
 	/**
+	 * Clear and rebuild non-complete Discovery queue rows.
+	 *
+	 * @return void
+	 */
+	public function rerun_discovery() {
+		if ( ! is_multisite() || ! is_main_site() || ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You do not have permission to update Content Stream.', 'as-content-stream' ) );
+		}
+
+		check_admin_referer( self::NONCE_QUEUE );
+
+		global $wpdb;
+		self::create_queue_table();
+		self::create_processing_queue_table();
+
+		$wpdb->query(
+			$wpdb->prepare(
+				'DELETE FROM ' . self::processing_queue_table_name() . ' WHERE action = %s AND status <> %s',
+				'discover',
+				'complete'
+			)
+		);
+		$wpdb->query(
+			$wpdb->prepare(
+				'DELETE FROM ' . self::queue_table_name() . ' WHERE action = %s AND status <> %s',
+				'discover',
+				'complete'
+			)
+		);
+
+		$this->refresh_discovery_queue();
+
+		wp_safe_redirect( $this->admin_url( array( 'tab' => 'discovery_queue', 'discovery_refreshed' => 1 ) ) );
+		exit;
+	}
+
+	/**
 	 * Clear terminal processing log rows.
 	 *
 	 * @return void
@@ -3697,6 +3744,8 @@ class AS_Content_Stream {
 			return;
 		}
 
+		$this->delete_stale_discovery_queue_items();
+
 		foreach ( $this->get_discovery_source_items() as $item ) {
 			if ( $this->source_queue_action_exists( (int) $item['source_blog_id'], (int) $item['source_post_id'], sanitize_key( $item['post_type'] ), 'discover' ) ) {
 				continue;
@@ -3830,18 +3879,79 @@ class AS_Content_Stream {
 	private function get_published_source_posts() {
 		global $wpdb;
 
+		$post_types = $this->get_discoverable_source_post_types();
+		if ( empty( $post_types ) ) {
+			return array();
+		}
+
 		$table = $wpdb->get_blog_prefix( get_main_site_id() ) . 'posts';
+		$placeholders = implode( ',', array_fill( 0, count( $post_types ), '%s' ) );
 		$rows = $wpdb->get_results(
-			"SELECT ID, post_type, post_title, post_name, post_date, post_date_gmt, post_modified, post_modified_gmt FROM {$table} WHERE post_status = 'publish' ORDER BY post_type ASC, post_title ASC",
+			$wpdb->prepare(
+				"SELECT ID, post_type, post_title, post_name, post_date, post_date_gmt, post_modified, post_modified_gmt FROM {$table} WHERE post_status = %s AND post_type IN ({$placeholders}) ORDER BY post_type ASC, post_title ASC",
+				array_merge( array( 'publish' ), $post_types )
+			),
 			ARRAY_A
 		);
 
+		return array_values( (array) $rows );
+	}
+
+	/**
+	 * Get public source post types currently registered on the core site.
+	 *
+	 * @return string[]
+	 */
+	private function get_discoverable_source_post_types() {
+		$restore = get_current_blog_id() !== get_main_site_id();
+		if ( $restore ) {
+			switch_to_blog( get_main_site_id() );
+		}
+
+		$post_types = get_post_types( array( 'public' => true ), 'names' );
+
+		if ( $restore ) {
+			restore_current_blog();
+		}
+
 		return array_values(
 			array_filter(
-				(array) $rows,
-				function ( $row ) {
-					return $this->is_streamable_post_type( isset( $row['post_type'] ) ? $row['post_type'] : '' );
+				array_map( 'sanitize_key', (array) $post_types ),
+				function ( $post_type ) {
+					return $this->is_streamable_post_type( $post_type );
 				}
+			)
+		);
+	}
+
+	/**
+	 * Delete stale Discovery rows for inactive or non-public source post types.
+	 *
+	 * @return void
+	 */
+	private function delete_stale_discovery_queue_items() {
+		global $wpdb;
+
+		$post_types = $this->get_discoverable_source_post_types();
+		if ( empty( $post_types ) ) {
+			$wpdb->delete(
+				self::queue_table_name(),
+				array(
+					'action'         => 'discover',
+					'source_blog_id' => get_main_site_id(),
+				),
+				array( '%s', '%d' )
+			);
+			return;
+		}
+
+		$placeholders = implode( ',', array_fill( 0, count( $post_types ), '%s' ) );
+		$posts_table = $wpdb->get_blog_prefix( get_main_site_id() ) . 'posts';
+		$query_args = array_merge( array( 'publish' ), $post_types, array( get_main_site_id(), 'discover', 'complete' ) );
+		$wpdb->query(
+			$wpdb->prepare(
+				'DELETE q FROM ' . self::queue_table_name() . " q LEFT JOIN {$posts_table} p ON p.ID = q.source_post_id AND p.post_status = %s AND p.post_type IN ({$placeholders}) WHERE q.source_blog_id = %d AND q.action = %s AND q.status <> %s AND p.ID IS NULL",
+				$query_args
 			)
 		);
 	}
@@ -3913,13 +4023,18 @@ class AS_Content_Stream {
 	 *
 	 * @return array<int,object>
 	 */
-	private function get_queue_items( $action ) {
+	private function get_queue_items( $action, $limit = 100 ) {
 		global $wpdb;
+
+		$action = sanitize_key( $action );
+		$limit = max( 1, absint( $limit ) );
+		$order_by = 'discover' === $action ? 'post_type ASC, source_post_id ASC' : 'id DESC';
 
 		return $wpdb->get_results(
 			$wpdb->prepare(
-				"SELECT * FROM " . self::queue_table_name() . " WHERE action = %s AND status != 'complete' ORDER BY id DESC LIMIT 100",
-				$action
+				'SELECT * FROM ' . self::queue_table_name() . " WHERE action = %s AND status != 'complete' ORDER BY {$order_by} LIMIT %d",
+				$action,
+				$limit
 			)
 		);
 	}
