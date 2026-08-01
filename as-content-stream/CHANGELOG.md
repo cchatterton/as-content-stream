@@ -2,6 +2,13 @@
 
 All notable changes to AS Content Stream are recorded here.
 
+## 0.1.22 - 2026-08-01
+
+- Changed the test button to use the main processing flow with a one-job processing limit.
+- Exploded the full destination batch before processing one test job so the parent remains in progress while child jobs are pending.
+- Added lightweight destination create, update, and trash handling with source/destination stream identifiers.
+- Added exact destination edit links when a destination post exists.
+
 ## 0.1.21 - 2026-08-01
 
 - Changed the manual processing test tick to create and process only one sampled destination job.

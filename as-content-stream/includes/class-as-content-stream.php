@@ -28,6 +28,14 @@ class AS_Content_Stream {
 	const STREAM_AUTHOR_EMAIL    = 'as-content-stream@invalid.local';
 	const STREAM_AUTHOR_ROLE     = 'integration';
 	const STREAM_AUTHOR_META     = '_as_content_stream_user';
+	const META_SOURCE_UUID       = '_as_content_stream_uuid';
+	const META_SOURCE_BLOG_ID    = '_as_content_stream_source_blog_id';
+	const META_SOURCE_POST_ID    = '_as_content_stream_source_post_id';
+	const META_SOURCE_POST_TYPE  = '_as_content_stream_source_post_type';
+	const META_SOURCE_SLUG       = '_as_content_stream_source_slug';
+	const META_TARGET_LANGUAGE   = '_as_content_stream_target_language';
+	const META_DESTINATION_MAP   = '_as_content_stream_destinations';
+	const META_MANAGED           = '_as_content_stream_managed';
 
 	/**
 	 * Singleton instance.
@@ -629,9 +637,11 @@ class AS_Content_Stream {
 				<?php endif; ?>
 				<?php foreach ( $items as $item ) : ?>
 					<?php
+					$payload = $this->decode_queue_payload( $item->payload );
 					$source_url = $this->source_edit_url( (int) $item->source_blog_id, (int) $item->source_post_id );
 					$source_url = $source_url ? $source_url : $this->site_admin_url( (int) $item->source_blog_id );
-					$target_url = $this->site_admin_url( (int) $item->target_blog_id );
+					$target_url = $this->destination_edit_url( (int) $item->target_blog_id, sanitize_key( $item->post_type ), $payload );
+					$target_url = $target_url ? $target_url : $this->site_admin_url( (int) $item->target_blog_id );
 					?>
 					<tr>
 						<td><?php echo esc_html( $item->created_at ); ?></td>
@@ -686,9 +696,11 @@ class AS_Content_Stream {
 				<?php endif; ?>
 				<?php foreach ( $items as $item ) : ?>
 					<?php
+					$payload = $this->decode_queue_payload( $item->payload );
 					$source_url = $this->source_edit_url( (int) $item->source_blog_id, (int) $item->source_post_id );
 					$source_url = $source_url ? $source_url : $this->site_admin_url( (int) $item->source_blog_id );
-					$target_url = $this->site_admin_url( (int) $item->target_blog_id );
+					$target_url = $this->destination_edit_url( (int) $item->target_blog_id, sanitize_key( $item->post_type ), $payload );
+					$target_url = $target_url ? $target_url : $this->site_admin_url( (int) $item->target_blog_id );
 					?>
 					<tr>
 						<td><?php echo esc_html( $item->completed_at ); ?></td>
@@ -800,9 +812,11 @@ class AS_Content_Stream {
 	/**
 	 * Process one cron tick.
 	 *
+	 * @param bool $force Whether to run while processing is disabled.
+	 * @param int  $job_limit Optional number of child jobs to process. Zero means no limit.
 	 * @return void
 	 */
-	public function process_tick( $force = false ) {
+	public function process_tick( $force = false, $job_limit = 0 ) {
 		if ( ! $force && ! get_site_option( self::OPTION_PROCESSING_ENABLED, false ) ) {
 			$this->store_telemetry(
 				array(
@@ -833,7 +847,7 @@ class AS_Content_Stream {
 		}
 
 		$this->explode_source_queue_item( $source_item );
-		$result = $this->process_processing_jobs( (int) $source_item->id );
+		$result = $this->process_processing_jobs( (int) $source_item->id, $job_limit );
 		$this->complete_source_queue_item_if_ready( (int) $source_item->id );
 
 		$this->store_telemetry(
@@ -865,80 +879,12 @@ class AS_Content_Stream {
 
 		check_admin_referer( self::NONCE_TEST_TICK );
 
-		if ( ! get_site_option( self::OPTION_PROCESSING_ENABLED, false ) && 0 === $this->get_active_processing_job_count() ) {
-			$this->process_test_tick();
+		if ( ! get_site_option( self::OPTION_PROCESSING_ENABLED, false ) ) {
+			$this->process_tick( true, 1 );
 		}
 
 		wp_safe_redirect( $this->admin_url( array( 'tab' => 'processing_queue', 'updated' => 1 ) ) );
 		exit;
-	}
-
-	/**
-	 * Process one manual test job only.
-	 *
-	 * @return void
-	 */
-	private function process_test_tick() {
-		self::create_queue_table();
-		self::create_processing_queue_table();
-
-		$started = microtime( true );
-		$source_item = $this->get_next_source_queue_item();
-
-		if ( ! $source_item ) {
-			$this->store_telemetry(
-				array(
-					'phase'        => 'test_idle',
-					'batch_total'  => 0,
-					'batch_done'   => 0,
-					'last_message' => __( 'Test tick found no pending source queue items.', 'as-content-stream' ),
-					'last_batch_duration_ms' => $this->duration_ms( $started ),
-				)
-			);
-			return;
-		}
-
-		$created = $this->explode_source_queue_item( $source_item, 1 );
-		$result = $this->process_processing_jobs( (int) $source_item->id, 1 );
-		$this->restore_test_source_queue_item( $source_item );
-
-		$this->store_telemetry(
-			array(
-				'phase'        => 'test_' . sanitize_key( $source_item->action ),
-				'current_source_id' => (int) $source_item->id,
-				'batch_total'  => (int) $created,
-				'batch_done'   => (int) $result['done'],
-				'last_message' => sprintf(
-					/* translators: 1: processed count, 2: created count. */
-					__( 'Test tick processed %1$d of %2$d sampled processing jobs.', 'as-content-stream' ),
-					(int) $result['done'],
-					(int) $created
-				),
-				'last_batch_duration_ms' => $this->duration_ms( $started ),
-			)
-		);
-	}
-
-	/**
-	 * Keep a manual test tick from consuming the source queue item.
-	 *
-	 * @param object $source_item Source queue row.
-	 * @return void
-	 */
-	private function restore_test_source_queue_item( $source_item ) {
-		global $wpdb;
-
-		if ( 'complete' === $source_item->status ) {
-			return;
-		}
-
-		$wpdb->update(
-			self::queue_table_name(),
-			array( 'status' => sanitize_key( $source_item->status ) ),
-			array( 'id' => (int) $source_item->id ),
-			array( '%s' ),
-			array( '%d' )
-		);
 	}
 
 	/**
@@ -1014,6 +960,10 @@ class AS_Content_Stream {
 
 		$created = 0;
 		foreach ( $targets as $target ) {
+			if ( $this->processing_job_exists_for_target( (int) $source_item->id, (int) $target['blog_id'] ) ) {
+				continue;
+			}
+
 			$inserted = $wpdb->insert(
 				self::processing_queue_table_name(),
 				array(
@@ -1079,7 +1029,7 @@ class AS_Content_Stream {
 				array( '%d' )
 			);
 
-			$result = $this->process_processing_job_noop( $job );
+			$result = $this->process_processing_job( $job );
 			$wpdb->update(
 				self::processing_queue_table_name(),
 				array(
@@ -1102,15 +1052,301 @@ class AS_Content_Stream {
 	}
 
 	/**
-	 * Placeholder processing function.
+	 * Process one destination job.
 	 *
 	 * @param object $job Processing job.
 	 * @return array<string,string>
 	 */
-	private function process_processing_job_noop( $job ) {
+	private function process_processing_job( $job ) {
+		$action = sanitize_key( $job->action );
+
+		if ( 'delete' === $action ) {
+			return $this->process_delete_job( $job );
+		}
+
+		if ( 'create' === $action || 'update' === $action ) {
+			return $this->process_upsert_job( $job );
+		}
+
+		return $this->processing_result( 'failed', __( 'Unknown processing action.', 'as-content-stream' ) );
+	}
+
+	/**
+	 * Create or update one destination post.
+	 *
+	 * @param object $job Processing job.
+	 * @return array<string,string>
+	 */
+	private function process_upsert_job( $job ) {
+		$payload = $this->decode_queue_payload( $job->payload );
+		$source_uuid = isset( $payload['source_uuid'] ) ? sanitize_text_field( $payload['source_uuid'] ) : '';
+
+		if ( '' === $source_uuid ) {
+			return $this->processing_result( 'failed', __( 'Missing source stream UUID.', 'as-content-stream' ) );
+		}
+
+		$restore = get_current_blog_id() !== (int) $job->target_blog_id;
+		if ( $restore ) {
+			switch_to_blog( (int) $job->target_blog_id );
+		}
+
+		$author_id = $this->ensure_stream_author_user();
+		if ( is_wp_error( $author_id ) ) {
+			if ( $restore ) {
+				restore_current_blog();
+			}
+			return $this->processing_result( 'failed', $author_id->get_error_message() );
+		}
+
+		$site_result = $this->ensure_stream_author_on_site( (int) $job->target_blog_id, (int) $author_id );
+		if ( is_wp_error( $site_result ) ) {
+			if ( $restore ) {
+				restore_current_blog();
+			}
+			return $this->processing_result( 'failed', $site_result->get_error_message() );
+		}
+
+		$existing_id = $this->find_destination_post_id( $job, $payload );
+		if ( $existing_id && 'trash' === get_post_status( $existing_id ) ) {
+			if ( $restore ) {
+				restore_current_blog();
+			}
+			return $this->processing_result( 'skipped', __( 'Destination exists in trash; skipped.', 'as-content-stream' ) );
+		}
+
+		if ( $existing_id && 'create' === sanitize_key( $job->action ) ) {
+			if ( $restore ) {
+				restore_current_blog();
+			}
+			return $this->processing_result( 'skipped', __( 'Destination already exists; skipped create.', 'as-content-stream' ) );
+		}
+
+		$post_data = $this->destination_post_data_from_payload( $job, $payload, (int) $author_id );
+		if ( $existing_id ) {
+			$post_data['ID'] = $existing_id;
+			$result_id = wp_update_post( wp_slash( $post_data ), true );
+			$message = __( 'Destination post updated.', 'as-content-stream' );
+		} else {
+			$result_id = wp_insert_post( wp_slash( $post_data ), true );
+			$message = __( 'Destination post created.', 'as-content-stream' );
+		}
+
+		if ( is_wp_error( $result_id ) ) {
+			if ( $restore ) {
+				restore_current_blog();
+			}
+			return $this->processing_result( 'failed', $result_id->get_error_message() );
+		}
+
+		$this->store_destination_identifiers( (int) $result_id, $job, $payload );
+		$this->set_wpml_language_for_destination( (int) $result_id, $job );
+
+		if ( $restore ) {
+			restore_current_blog();
+		}
+
+		$this->store_source_destination_mapping( $job, (int) $result_id, $payload );
+
+		return $this->processing_result( 'complete', sprintf( '%s #%d', $message, (int) $result_id ) );
+	}
+
+	/**
+	 * Trash one destination post.
+	 *
+	 * @param object $job Processing job.
+	 * @return array<string,string>
+	 */
+	private function process_delete_job( $job ) {
+		$payload = $this->decode_queue_payload( $job->payload );
+		$restore = get_current_blog_id() !== (int) $job->target_blog_id;
+		if ( $restore ) {
+			switch_to_blog( (int) $job->target_blog_id );
+		}
+
+		$existing_id = $this->find_destination_post_id( $job, $payload );
+		if ( ! $existing_id ) {
+			if ( $restore ) {
+				restore_current_blog();
+			}
+			return $this->processing_result( 'skipped', __( 'Destination did not exist; skipped delete.', 'as-content-stream' ) );
+		}
+
+		if ( 'trash' === get_post_status( $existing_id ) ) {
+			if ( $restore ) {
+				restore_current_blog();
+			}
+			return $this->processing_result( 'skipped', __( 'Destination already in trash; skipped delete.', 'as-content-stream' ) );
+		}
+
+		$result = wp_trash_post( $existing_id );
+		if ( $restore ) {
+			restore_current_blog();
+		}
+
+		if ( ! $result ) {
+			return $this->processing_result( 'failed', __( 'Unable to move destination to trash.', 'as-content-stream' ) );
+		}
+
+		return $this->processing_result( 'complete', sprintf( __( 'Destination post moved to trash. #%d', 'as-content-stream' ), (int) $existing_id ) );
+	}
+
+	/**
+	 * Build a processing result.
+	 *
+	 * @param string $status Result status.
+	 * @param string $message Result message.
+	 * @return array<string,string>
+	 */
+	private function processing_result( $status, $message ) {
 		return array(
-			'status'  => 'complete',
-			'message' => __( 'No-op processor completed. Streaming actions are not implemented yet.', 'as-content-stream' ),
+			'status'  => sanitize_key( $status ),
+			'message' => sanitize_text_field( $message ),
+		);
+	}
+
+	/**
+	 * Find the matching destination post.
+	 *
+	 * @param object              $job Processing job.
+	 * @param array<string,mixed> $payload Queue payload.
+	 * @return int
+	 */
+	private function find_destination_post_id( $job, $payload ) {
+		$source_uuid = isset( $payload['source_uuid'] ) ? sanitize_text_field( $payload['source_uuid'] ) : '';
+
+		if ( '' !== $source_uuid ) {
+			$matches = get_posts(
+				array(
+					'post_type'      => sanitize_key( $job->post_type ),
+					'post_status'    => array( 'publish', 'future', 'draft', 'pending', 'private', 'trash' ),
+					'fields'         => 'ids',
+					'posts_per_page' => 1,
+					'meta_key'       => self::META_SOURCE_UUID,
+					'meta_value'     => $source_uuid,
+				)
+			);
+
+			if ( ! empty( $matches ) ) {
+				return (int) $matches[0];
+			}
+		}
+
+		$slug = isset( $payload['original_post_name'] ) && '' !== $payload['original_post_name'] ? $payload['original_post_name'] : ( isset( $payload['post_name'] ) ? $payload['post_name'] : '' );
+		$slug = sanitize_title( $slug );
+
+		if ( '' === $slug ) {
+			return 0;
+		}
+
+		$post = get_page_by_path( $slug, OBJECT, sanitize_key( $job->post_type ) );
+		return $post instanceof WP_Post ? (int) $post->ID : 0;
+	}
+
+	/**
+	 * Build destination post data from the source snapshot.
+	 *
+	 * @param object              $job Processing job.
+	 * @param array<string,mixed> $payload Queue payload.
+	 * @param int                 $author_id Destination author ID.
+	 * @return array<string,mixed>
+	 */
+	private function destination_post_data_from_payload( $job, $payload, $author_id ) {
+		$post_status = isset( $payload['post_status'] ) ? sanitize_key( $payload['post_status'] ) : 'draft';
+		if ( 'auto-draft' === $post_status || 'trash' === $post_status ) {
+			$post_status = 'draft';
+		}
+
+		return array(
+			'post_author'    => $author_id,
+			'post_content'   => isset( $payload['post_content'] ) ? (string) $payload['post_content'] : '',
+			'post_excerpt'   => isset( $payload['post_excerpt'] ) ? (string) $payload['post_excerpt'] : '',
+			'post_name'      => isset( $payload['original_post_name'] ) && '' !== $payload['original_post_name'] ? sanitize_title( $payload['original_post_name'] ) : sanitize_title( isset( $payload['post_name'] ) ? $payload['post_name'] : '' ),
+			'post_date'      => isset( $payload['post_date'] ) ? (string) $payload['post_date'] : '',
+			'post_date_gmt'  => isset( $payload['post_date_gmt'] ) ? (string) $payload['post_date_gmt'] : '',
+			'post_status'    => $post_status,
+			'post_title'     => isset( $payload['post_title'] ) ? (string) $payload['post_title'] : '',
+			'post_type'      => sanitize_key( $job->post_type ),
+			'comment_status' => isset( $payload['comment_status'] ) ? sanitize_key( $payload['comment_status'] ) : 'closed',
+			'ping_status'    => isset( $payload['ping_status'] ) ? sanitize_key( $payload['ping_status'] ) : 'closed',
+			'menu_order'     => isset( $payload['menu_order'] ) ? (int) $payload['menu_order'] : 0,
+		);
+	}
+
+	/**
+	 * Store destination reverse identifiers.
+	 *
+	 * @param int                 $destination_post_id Destination post ID.
+	 * @param object              $job Processing job.
+	 * @param array<string,mixed> $payload Queue payload.
+	 * @return void
+	 */
+	private function store_destination_identifiers( $destination_post_id, $job, $payload ) {
+		update_post_meta( $destination_post_id, self::META_SOURCE_UUID, isset( $payload['source_uuid'] ) ? sanitize_text_field( $payload['source_uuid'] ) : '' );
+		update_post_meta( $destination_post_id, self::META_SOURCE_BLOG_ID, (int) $job->source_blog_id );
+		update_post_meta( $destination_post_id, self::META_SOURCE_POST_ID, (int) $job->source_post_id );
+		update_post_meta( $destination_post_id, self::META_SOURCE_POST_TYPE, sanitize_key( $job->post_type ) );
+		update_post_meta( $destination_post_id, self::META_SOURCE_SLUG, isset( $payload['original_post_name'] ) ? sanitize_title( $payload['original_post_name'] ) : '' );
+		update_post_meta( $destination_post_id, self::META_TARGET_LANGUAGE, sanitize_key( $job->target_language ) );
+		update_post_meta( $destination_post_id, self::META_MANAGED, 1 );
+
+		if ( isset( $payload['page_template'] ) && '' !== $payload['page_template'] ) {
+			update_post_meta( $destination_post_id, '_wp_page_template', sanitize_text_field( $payload['page_template'] ) );
+		}
+	}
+
+	/**
+	 * Store the destination mapping on the source post.
+	 *
+	 * @param object              $job Processing job.
+	 * @param int                 $destination_post_id Destination post ID.
+	 * @param array<string,mixed> $payload Queue payload.
+	 * @return void
+	 */
+	private function store_source_destination_mapping( $job, $destination_post_id, $payload ) {
+		$restore = get_current_blog_id() !== (int) $job->source_blog_id;
+		if ( $restore ) {
+			switch_to_blog( (int) $job->source_blog_id );
+		}
+
+		$map = get_post_meta( (int) $job->source_post_id, self::META_DESTINATION_MAP, true );
+		$map = is_array( $map ) ? $map : array();
+		$key = (int) $job->target_blog_id . ':' . sanitize_key( $job->target_language );
+		$map[ $key ] = array(
+			'target_blog_id'      => (int) $job->target_blog_id,
+			'target_language'     => sanitize_key( $job->target_language ),
+			'destination_post_id' => (int) $destination_post_id,
+			'source_uuid'         => isset( $payload['source_uuid'] ) ? sanitize_text_field( $payload['source_uuid'] ) : '',
+			'source_slug'         => isset( $payload['original_post_name'] ) ? sanitize_title( $payload['original_post_name'] ) : '',
+			'last_streamed_at'    => current_time( 'mysql', true ),
+		);
+		update_post_meta( (int) $job->source_post_id, self::META_DESTINATION_MAP, $map );
+
+		if ( $restore ) {
+			restore_current_blog();
+		}
+	}
+
+	/**
+	 * Assign WPML language metadata when WPML is available.
+	 *
+	 * @param int    $destination_post_id Destination post ID.
+	 * @param object $job Processing job.
+	 * @return void
+	 */
+	private function set_wpml_language_for_destination( $destination_post_id, $job ) {
+		if ( ! has_action( 'wpml_set_element_language_details' ) ) {
+			return;
+		}
+
+		do_action(
+			'wpml_set_element_language_details',
+			array(
+				'element_id'           => $destination_post_id,
+				'element_type'         => 'post_' . sanitize_key( $job->post_type ),
+				'trid'                 => false,
+				'language_code'        => sanitize_key( $job->target_language ),
+				'source_language_code' => null,
+			)
 		);
 	}
 
@@ -1255,6 +1491,7 @@ class AS_Content_Stream {
 		}
 
 		$this->queue_locks[ $source_post_id ] = true;
+		$source_uuid = $this->ensure_source_stream_uuid( $source_post_id );
 
 		$this->insert_queue_item(
 			array(
@@ -1265,10 +1502,19 @@ class AS_Content_Stream {
 				'target_language' => '',
 				'post_type'       => $post_type,
 				'payload'         => array(
-					'post_title'  => $post->post_title,
-					'post_status' => $post->post_status,
-					'post_name'   => $post->post_name,
+					'source_uuid'        => $source_uuid,
+					'post_title'         => $post->post_title,
+					'post_content'       => $post->post_content,
+					'post_excerpt'       => $post->post_excerpt,
+					'post_status'        => $post->post_status,
+					'post_name'          => $post->post_name,
+					'post_date'          => $post->post_date,
+					'post_date_gmt'      => $post->post_date_gmt,
 					'original_post_name' => $this->get_original_post_name( $post ),
+					'comment_status'     => $post->comment_status,
+					'ping_status'        => $post->ping_status,
+					'menu_order'         => (int) $post->menu_order,
+					'page_template'      => get_post_meta( $source_post_id, '_wp_page_template', true ),
 				),
 			)
 		);
@@ -1411,6 +1657,23 @@ class AS_Content_Stream {
 	}
 
 	/**
+	 * Ensure a source post has a stable stream UUID.
+	 *
+	 * @param int $post_id Post ID.
+	 * @return string
+	 */
+	private function ensure_source_stream_uuid( $post_id ) {
+		$uuid = (string) get_post_meta( $post_id, self::META_SOURCE_UUID, true );
+
+		if ( '' === $uuid ) {
+			$uuid = wp_generate_uuid4();
+			update_post_meta( $post_id, self::META_SOURCE_UUID, $uuid );
+		}
+
+		return $uuid;
+	}
+
+	/**
 	 * Decode queue JSON payload.
 	 *
 	 * @param string|null $payload Payload JSON.
@@ -1453,6 +1716,44 @@ class AS_Content_Stream {
 	 */
 	private function site_admin_url( $blog_id ) {
 		return get_admin_url( $blog_id );
+	}
+
+	/**
+	 * Get edit URL for a destination post matched by source UUID.
+	 *
+	 * @param int                 $blog_id Blog ID.
+	 * @param string              $post_type Post type.
+	 * @param array<string,mixed> $payload Queue payload.
+	 * @return string
+	 */
+	private function destination_edit_url( $blog_id, $post_type, $payload ) {
+		$source_uuid = isset( $payload['source_uuid'] ) ? sanitize_text_field( $payload['source_uuid'] ) : '';
+		if ( '' === $source_uuid ) {
+			return '';
+		}
+
+		$restore = is_multisite() && get_current_blog_id() !== $blog_id;
+		if ( $restore ) {
+			switch_to_blog( $blog_id );
+		}
+
+		$matches = get_posts(
+			array(
+				'post_type'      => sanitize_key( $post_type ),
+				'post_status'    => array( 'publish', 'future', 'draft', 'pending', 'private', 'trash' ),
+				'fields'         => 'ids',
+				'posts_per_page' => 1,
+				'meta_key'       => self::META_SOURCE_UUID,
+				'meta_value'     => $source_uuid,
+			)
+		);
+		$url = empty( $matches ) ? '' : get_edit_post_link( (int) $matches[0], 'raw' );
+
+		if ( $restore ) {
+			restore_current_blog();
+		}
+
+		return $url ? $url : '';
 	}
 
 	/**
@@ -1697,6 +1998,25 @@ class AS_Content_Stream {
 			$wpdb->prepare(
 				'SELECT id FROM ' . self::processing_queue_table_name() . " WHERE parent_queue_id = %d AND status IN ('pending', 'in_progress') LIMIT 1",
 				$parent_queue_id
+			)
+		);
+	}
+
+	/**
+	 * Check whether a processing job already exists for a parent/target pair.
+	 *
+	 * @param int $parent_queue_id Parent queue ID.
+	 * @param int $target_blog_id Target blog ID.
+	 * @return bool
+	 */
+	private function processing_job_exists_for_target( $parent_queue_id, $target_blog_id ) {
+		global $wpdb;
+
+		return (bool) $wpdb->get_var(
+			$wpdb->prepare(
+				'SELECT id FROM ' . self::processing_queue_table_name() . ' WHERE parent_queue_id = %d AND target_blog_id = %d LIMIT 1',
+				$parent_queue_id,
+				$target_blog_id
 			)
 		);
 	}
