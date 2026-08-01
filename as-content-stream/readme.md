@@ -1,7 +1,7 @@
 # AS Content Stream
 
 Author: AlphaSys
-Version: 0.1.16
+Version: 0.1.17
 Status: POC
 
 ## Purpose
@@ -20,7 +20,7 @@ AS Content Stream is a network-enabled WordPress plugin scaffold for multisite c
 - De-duplicates pending queue rows for the same source post/action/post type.
 - Keeps new content in the Create Queue only while its create action is pending.
 - Preserves the original source slug for delete processing.
-- Stores the target language setting for future queue processing.
+- Stores the target language setting from available destination languages for future queue processing.
 - Supports WordPress-native updates from GitHub releases.
 
 ## Folder Structure
@@ -49,6 +49,7 @@ as-content-stream/
 - Content streaming execution and destination matching are not implemented yet; this build creates source-site queue records only.
 - Revision and autosave records are excluded from the queues.
 - Future processors should clear queues in order: create, then update, then delete.
+- Target language defaults to the most common language across destination WPML sites until manually saved.
 
 ## Future Considerations
 

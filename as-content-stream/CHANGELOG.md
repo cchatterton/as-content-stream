@@ -2,6 +2,12 @@
 
 All notable changes to AS Content Stream are recorded here.
 
+## 0.1.17 - 2026-08-01
+
+- Removed the Source Site tile from Settings.
+- Changed target language to a picklist built from destination WPML site languages.
+- Defaulted target language to the most common available destination language until overridden and saved.
+
 ## 0.1.16 - 2026-07-23
 
 - Excluded the core source site from the Sites & WPML destination list.

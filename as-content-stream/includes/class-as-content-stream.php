@@ -314,7 +314,8 @@ class AS_Content_Stream {
 	private function render_settings_tab() {
 		$sites        = $this->discover_sites();
 		$queue_counts = $this->get_queue_counts();
-		$target_language = $this->get_target_language();
+		$language_counts = $this->get_language_counts( $sites );
+		$target_language = $this->get_effective_target_language( $language_counts );
 		$wpml_sites   = array_filter(
 			$sites,
 			static function ( $site ) {
@@ -324,17 +325,22 @@ class AS_Content_Stream {
 		?>
 		<div class="as-content-grid">
 			<div class="as-content-panel">
-				<h2><?php esc_html_e( 'Source Site', 'as-content-stream' ); ?></h2>
-				<p><strong><?php esc_html_e( 'Monitoring:', 'as-content-stream' ); ?></strong> <?php echo esc_html( get_bloginfo( 'name' ) ); ?></p>
-				<p><?php esc_html_e( 'Create, update, trash, and delete actions on this core site are queued for later processing.', 'as-content-stream' ); ?></p>
-			</div>
-			<div class="as-content-panel">
 				<h2><?php esc_html_e( 'Target Language', 'as-content-stream' ); ?></h2>
 				<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_save_settings' ) ); ?>">
 					<?php wp_nonce_field( self::NONCE_SETTINGS ); ?>
 					<label class="screen-reader-text" for="as-content-target-language"><?php esc_html_e( 'Target language', 'as-content-stream' ); ?></label>
-					<input id="as-content-target-language" class="regular-text" name="target_language" type="text" value="<?php echo esc_attr( $target_language ); ?>" placeholder="<?php esc_attr_e( 'Example: fr, de, es', 'as-content-stream' ); ?>">
-					<p class="description"><?php esc_html_e( 'Stored for future processing. Queue capture does not currently depend on this value.', 'as-content-stream' ); ?></p>
+					<select id="as-content-target-language" class="regular-text" name="target_language">
+						<?php if ( empty( $language_counts ) ) : ?>
+							<option value=""><?php esc_html_e( 'No destination languages available', 'as-content-stream' ); ?></option>
+						<?php else : ?>
+							<?php foreach ( $language_counts as $language => $count ) : ?>
+								<option value="<?php echo esc_attr( $language ); ?>" <?php selected( $target_language, $language ); ?>>
+									<?php echo esc_html( sprintf( '%s (%d)', $language, $count ) ); ?>
+								</option>
+							<?php endforeach; ?>
+						<?php endif; ?>
+					</select>
+					<p class="description"><?php esc_html_e( 'Defaults to the most common destination language. Save to override with another available language.', 'as-content-stream' ); ?></p>
 					<?php submit_button( __( 'Save Settings', 'as-content-stream' ), 'primary', 'submit', false ); ?>
 				</form>
 			</div>
@@ -424,7 +430,12 @@ class AS_Content_Stream {
 
 		check_admin_referer( self::NONCE_SETTINGS );
 
+		$language_counts = $this->get_language_counts( $this->discover_sites() );
 		$target_language = isset( $_POST['target_language'] ) ? sanitize_key( wp_unslash( $_POST['target_language'] ) ) : '';
+		if ( '' !== $target_language && ! isset( $language_counts[ $target_language ] ) ) {
+			$target_language = '';
+		}
+
 		update_site_option( self::OPTION_TARGET_LANGUAGE, $target_language );
 
 		wp_safe_redirect( $this->admin_url( array( 'tab' => 'settings', 'updated' => 1 ) ) );
@@ -937,6 +948,57 @@ class AS_Content_Stream {
 	 */
 	private function get_target_language() {
 		return sanitize_key( (string) get_site_option( self::OPTION_TARGET_LANGUAGE, '' ) );
+	}
+
+	/**
+	 * Get language counts across destination WPML sites.
+	 *
+	 * @param array<int,array<string,mixed>> $sites Destination sites.
+	 * @return array<string,int>
+	 */
+	private function get_language_counts( $sites ) {
+		$counts = array();
+
+		foreach ( $sites as $site ) {
+			if ( empty( $site['wpml_active'] ) || empty( $site['languages'] ) || ! is_array( $site['languages'] ) ) {
+				continue;
+			}
+
+			foreach ( $site['languages'] as $language ) {
+				$language = sanitize_key( $language );
+				if ( '' === $language ) {
+					continue;
+				}
+
+				$counts[ $language ] = isset( $counts[ $language ] ) ? $counts[ $language ] + 1 : 1;
+			}
+		}
+
+		arsort( $counts );
+
+		return $counts;
+	}
+
+	/**
+	 * Get saved target language or most common available language.
+	 *
+	 * @param array<string,int> $language_counts Language counts.
+	 * @return string
+	 */
+	private function get_effective_target_language( $language_counts ) {
+		$target_language = $this->get_target_language();
+
+		if ( '' !== $target_language && isset( $language_counts[ $target_language ] ) ) {
+			return $target_language;
+		}
+
+		if ( empty( $language_counts ) ) {
+			return '';
+		}
+
+		$languages = array_keys( $language_counts );
+
+		return (string) reset( $languages );
 	}
 
 	/**
