@@ -91,6 +91,7 @@ class AS_Content_Stream {
 		add_action( 'admin_post_as_content_stream_run_queue_item', array( $this, 'run_queue_item' ) );
 		add_action( 'admin_post_as_content_stream_clear_log', array( $this, 'clear_log' ) );
 		add_action( 'admin_post_as_content_stream_run_processing_job', array( $this, 'run_processing_job' ) );
+		add_action( 'admin_post_as_content_stream_delete_processing_job', array( $this, 'delete_processing_job' ) );
 		add_action( 'admin_post_as_content_stream_run_link', array( $this, 'run_link' ) );
 		add_action( 'admin_post_as_content_stream_test_tick', array( $this, 'run_test_tick' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ) );
@@ -704,10 +705,17 @@ class AS_Content_Stream {
 						<td><?php echo esc_html( (int) $item->duration_ms . 'ms' ); ?></td>
 						<td><?php echo esc_html( $item->result_message ); ?></td>
 						<td>
-							<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_run_processing_job' ) ); ?>">
+							<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_run_processing_job' ) ); ?>" class="as-content-row-action">
 								<?php wp_nonce_field( self::NONCE_PROCESSING ); ?>
 								<input type="hidden" name="job_id" value="<?php echo esc_attr( (int) $item->id ); ?>">
 								<?php submit_button( __( 'Run', 'as-content-stream' ), 'secondary small', 'submit', false, $is_blocked ? array( 'disabled' => 'disabled' ) : array() ); ?>
+							</form>
+							<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_delete_processing_job' ) ); ?>" class="as-content-row-action">
+								<?php wp_nonce_field( self::NONCE_PROCESSING ); ?>
+								<input type="hidden" name="job_id" value="<?php echo esc_attr( (int) $item->id ); ?>">
+								<button type="submit" class="button button-small as-content-icon-button" aria-label="<?php esc_attr_e( 'Delete processing job', 'as-content-stream' ); ?>" title="<?php esc_attr_e( 'Delete processing job', 'as-content-stream' ); ?>" onclick="return window.confirm('<?php echo esc_js( __( 'Delete this processing job?', 'as-content-stream' ) ); ?>');">
+									<span class="dashicons dashicons-trash" aria-hidden="true"></span>
+								</button>
 							</form>
 						</td>
 					</tr>
@@ -2646,6 +2654,50 @@ class AS_Content_Stream {
 		}
 
 		wp_safe_redirect( $this->admin_url( array( 'tab' => 'processing_queue', 'updated' => 1 ) ) );
+		exit;
+	}
+
+	/**
+	 * Delete one processing job and unblock jobs waiting on it.
+	 *
+	 * @return void
+	 */
+	public function delete_processing_job() {
+		if ( ! is_multisite() || ! is_main_site() || ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You do not have permission to update AS Content Stream.', 'as-content-stream' ) );
+		}
+
+		check_admin_referer( self::NONCE_PROCESSING );
+
+		$job_id = isset( $_POST['job_id'] ) ? absint( $_POST['job_id'] ) : 0;
+		if ( $job_id ) {
+			global $wpdb;
+			self::create_processing_queue_table();
+			$wpdb->query(
+				$wpdb->prepare(
+					'DELETE FROM ' . self::processing_queue_table_name() . ' WHERE id = %d AND status <> %s',
+					$job_id,
+					'complete'
+				)
+			);
+			$wpdb->update(
+				self::processing_queue_table_name(),
+				array(
+					'status'         => 'pending',
+					'blocked_by'     => 0,
+					'result_message' => sprintf(
+						/* translators: %d: removed processing job ID. */
+						__( 'Unblocked after processing job #%d was removed.', 'as-content-stream' ),
+						$job_id
+					),
+				),
+				array( 'blocked_by' => $job_id ),
+				array( '%s', '%d', '%s' ),
+				array( '%d' )
+			);
+		}
+
+		wp_safe_redirect( $this->admin_url( array( 'tab' => 'processing_queue', 'deleted' => 1 ) ) );
 		exit;
 	}
 

@@ -2,6 +2,11 @@
 
 All notable changes to AS Content Stream are recorded here.
 
+## 0.1.31 - 2026-08-01
+
+- Added a trash icon control to delete individual Processing Queue jobs.
+- Unblocked jobs that were waiting on a removed Processing Queue job.
+
 ## 0.1.30 - 2026-08-01
 
 - Excluded WordPress structural post types, including `wp_navigation`, from source capture and dependency blockers.

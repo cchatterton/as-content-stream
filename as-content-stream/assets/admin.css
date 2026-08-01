@@ -93,6 +93,19 @@
 	max-width: 980px;
 }
 
+.as-content-row-action {
+	display: inline-block;
+	margin: 0 4px 0 0;
+	vertical-align: middle;
+}
+
+.as-content-icon-button .dashicons {
+	font-size: 16px;
+	height: 16px;
+	line-height: 1.4;
+	width: 16px;
+}
+
 .as-content-form {
 	max-width: 840px;
 }
