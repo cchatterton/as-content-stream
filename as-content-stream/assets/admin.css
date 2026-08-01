@@ -42,7 +42,7 @@
 
 .as-content-panel > form .submit,
 .as-content-panel #as-content-heartbeat form .submit {
-	margin: 8px 0 0;
+	margin: auto 0 0;
 	padding-bottom: 0;
 	padding-top: 0;
 }
@@ -85,6 +85,10 @@
 	text-align: right;
 }
 
+.as-content-progress-label {
+	margin-bottom: 3px;
+}
+
 .as-content-select {
 	box-sizing: border-box;
 	max-width: 100%;
@@ -119,7 +123,7 @@
 	background: #f0f0f1;
 	border: 1px solid #dcdcde;
 	height: 8px;
-	margin: 7px 0 10px;
+	margin: 0 0 10px;
 	overflow: hidden;
 	width: 100%;
 }

@@ -559,10 +559,13 @@ class AS_Content_Stream {
 					<tbody>
 						<tr><th scope="row"><?php esc_html_e( 'Sites', 'as-content-stream' ); ?></th><td><?php echo esc_html( count( $sites ) ); ?></td></tr>
 						<tr><th scope="row"><?php esc_html_e( 'WPML active sites', 'as-content-stream' ); ?></th><td><?php echo esc_html( count( $wpml_sites ) ); ?></td></tr>
-						<tr><th scope="row"><?php esc_html_e( 'Discovery', 'as-content-stream' ); ?></th><td><?php echo esc_html( isset( $queue_action_counts['discover'] ) ? $queue_action_counts['discover'] : 0 ); ?></td></tr>
-						<tr><th scope="row"><?php esc_html_e( 'Create / Update / Delete', 'as-content-stream' ); ?></th><td><?php echo esc_html( sprintf( '%1$d / %2$d / %3$d', isset( $queue_action_counts['create'] ) ? $queue_action_counts['create'] : 0, isset( $queue_action_counts['update'] ) ? $queue_action_counts['update'] : 0, isset( $queue_action_counts['delete'] ) ? $queue_action_counts['delete'] : 0 ) ); ?></td></tr>
-						<tr><th scope="row"><?php esc_html_e( 'Processing', 'as-content-stream' ); ?></th><td><?php echo esc_html( $this->format_counts( $processing_counts ) ); ?></td></tr>
-						<tr><th scope="row"><?php esc_html_e( 'Streamed Content / Log', 'as-content-stream' ); ?></th><td><?php echo esc_html( sprintf( '%1$d / %2$d', $streamed_count, $log_count ) ); ?></td></tr>
+						<tr><th scope="row"><?php esc_html_e( 'Discovery Queue', 'as-content-stream' ); ?></th><td><?php echo esc_html( isset( $queue_action_counts['discover'] ) ? $queue_action_counts['discover'] : 0 ); ?></td></tr>
+						<tr><th scope="row"><?php esc_html_e( 'Create Queue', 'as-content-stream' ); ?></th><td><?php echo esc_html( isset( $queue_action_counts['create'] ) ? $queue_action_counts['create'] : 0 ); ?></td></tr>
+						<tr><th scope="row"><?php esc_html_e( 'Update Queue', 'as-content-stream' ); ?></th><td><?php echo esc_html( isset( $queue_action_counts['update'] ) ? $queue_action_counts['update'] : 0 ); ?></td></tr>
+						<tr><th scope="row"><?php esc_html_e( 'Delete Queue', 'as-content-stream' ); ?></th><td><?php echo esc_html( isset( $queue_action_counts['delete'] ) ? $queue_action_counts['delete'] : 0 ); ?></td></tr>
+						<tr><th scope="row"><?php esc_html_e( 'Processing Queue', 'as-content-stream' ); ?></th><td><?php echo esc_html( $this->format_counts( $processing_counts ) ); ?></td></tr>
+						<tr><th scope="row"><?php esc_html_e( 'Streamed Content', 'as-content-stream' ); ?></th><td><?php echo esc_html( $streamed_count ); ?></td></tr>
+						<tr><th scope="row"><?php esc_html_e( 'Log', 'as-content-stream' ); ?></th><td><?php echo esc_html( $log_count ); ?></td></tr>
 					</tbody>
 				</table>
 				<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_rerun_discovery' ) ); ?>">
@@ -573,7 +576,7 @@ class AS_Content_Stream {
 			<div class="as-content-panel">
 				<h2><?php esc_html_e( 'Heartbeat', 'as-content-stream' ); ?></h2>
 				<div id="as-content-heartbeat" data-nonce="<?php echo esc_attr( wp_create_nonce( self::NONCE_HEARTBEAT ) ); ?>">
-					<table class="as-content-metric-table">
+					<table class="as-content-metric-table as-content-progress-label">
 						<tbody>
 							<tr><th scope="row"><?php esc_html_e( 'Next check', 'as-content-stream' ); ?></th><td><span data-as-heartbeat="next_check"><?php echo esc_html( $heartbeat['next_check_seconds'] ); ?></span> <?php esc_html_e( 'sec', 'as-content-stream' ); ?></td></tr>
 							<tr><th scope="row"><?php esc_html_e( 'In progress / Pending', 'as-content-stream' ); ?></th><td><span data-as-heartbeat="parent_in_progress"><?php echo esc_html( $heartbeat['parent_in_progress'] ); ?></span> / <span data-as-heartbeat="parent_pending"><?php echo esc_html( $heartbeat['parent_pending'] ); ?></span></td></tr>
@@ -582,7 +585,7 @@ class AS_Content_Stream {
 					<div class="as-content-progress" aria-hidden="true">
 						<span data-as-heartbeat-bar="parent" style="width: <?php echo esc_attr( $heartbeat['parent_pressure_percent'] ); ?>%;"></span>
 					</div>
-					<table class="as-content-metric-table">
+					<table class="as-content-metric-table as-content-progress-label">
 						<tbody>
 							<tr><th scope="row"><?php esc_html_e( 'Queued / Blocked', 'as-content-stream' ); ?></th><td><span data-as-heartbeat="child_queued"><?php echo esc_html( $heartbeat['child_queued'] ); ?></span> / <span data-as-heartbeat="child_blocked"><?php echo esc_html( $heartbeat['child_blocked'] ); ?></span></td></tr>
 						</tbody>

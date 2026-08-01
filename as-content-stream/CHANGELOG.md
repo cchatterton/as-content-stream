@@ -2,6 +2,12 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.42 - 2026-08-01
+
+- Split Network Status into one row per queue/tab metric.
+- Anchored the Target Language save action to the bottom of its tile.
+- Tightened Heartbeat metric labels so they sit with their progress bars.
+
 ## 0.1.41 - 2026-08-01
 
 - Replaced Discovery post-type stat tiles with a compact table.
