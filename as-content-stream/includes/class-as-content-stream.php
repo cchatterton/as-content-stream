@@ -490,7 +490,7 @@ class AS_Content_Stream {
 				return $site['wpml_active'];
 			}
 		);
-		$stream_author_status = $this->ensure_stream_author_for_sites( $wpml_sites );
+		$this->ensure_stream_author_for_sites( $wpml_sites );
 		?>
 		<div class="as-content-grid">
 			<div class="as-content-panel">
@@ -522,19 +522,8 @@ class AS_Content_Stream {
 				<p><strong><?php esc_html_e( 'Processing jobs:', 'as-content-stream' ); ?></strong> <?php echo esc_html( $this->format_counts( $processing_counts ) ); ?></p>
 			</div>
 			<div class="as-content-panel">
-				<h2><?php esc_html_e( 'Stream Author', 'as-content-stream' ); ?></h2>
-				<p><strong><?php esc_html_e( 'User:', 'as-content-stream' ); ?></strong> <?php echo esc_html( $stream_author_status['user_label'] ); ?></p>
-				<p><strong><?php esc_html_e( 'Role:', 'as-content-stream' ); ?></strong> <?php echo esc_html( self::STREAM_AUTHOR_ROLE ); ?></p>
-				<p><strong><?php esc_html_e( 'Sites checked:', 'as-content-stream' ); ?></strong> <?php echo esc_html( (int) $stream_author_status['checked'] ); ?></p>
-				<p><strong><?php esc_html_e( 'Sites ready:', 'as-content-stream' ); ?></strong> <?php echo esc_html( (int) $stream_author_status['ready'] ); ?></p>
-				<?php if ( ! empty( $stream_author_status['messages'] ) ) : ?>
-					<p class="description"><?php echo esc_html( implode( ' ', $stream_author_status['messages'] ) ); ?></p>
-				<?php endif; ?>
-			</div>
-			<div class="as-content-panel">
 				<h2><?php esc_html_e( 'Heartbeat', 'as-content-stream' ); ?></h2>
 				<div id="as-content-heartbeat" data-nonce="<?php echo esc_attr( wp_create_nonce( self::NONCE_HEARTBEAT ) ); ?>">
-					<p><strong><?php esc_html_e( 'Mode:', 'as-content-stream' ); ?></strong> <span data-as-heartbeat="enabled"><?php echo esc_html( $heartbeat['enabled'] ? __( 'On', 'as-content-stream' ) : __( 'Off / Manual', 'as-content-stream' ) ); ?></span></p>
 					<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_save_settings' ) ); ?>">
 						<?php wp_nonce_field( self::NONCE_SETTINGS ); ?>
 						<input type="hidden" name="settings_context" value="processing">
@@ -545,18 +534,11 @@ class AS_Content_Stream {
 						</label>
 						<?php submit_button( __( 'Save Mode', 'as-content-stream' ), 'primary', 'submit', false ); ?>
 					</form>
-					<?php if ( ! $processing_enabled ) : ?>
-						<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_test_tick' ) ); ?>" class="as-content-test-form">
-							<?php wp_nonce_field( self::NONCE_TEST_TICK ); ?>
-							<?php submit_button( __( 'Run One Manual Step', 'as-content-stream' ), 'secondary', 'submit', false ); ?>
-						</form>
-					<?php endif; ?>
 					<p><strong><?php esc_html_e( 'Next check:', 'as-content-stream' ); ?></strong> <span data-as-heartbeat="next_check"><?php echo esc_html( $heartbeat['next_check_seconds'] ); ?></span> <?php esc_html_e( 'seconds', 'as-content-stream' ); ?></p>
 					<div class="as-content-progress" aria-hidden="true">
 						<span data-as-heartbeat-bar style="width: <?php echo esc_attr( $heartbeat['progress_percent'] ); ?>%;"></span>
 					</div>
 					<p><span data-as-heartbeat="batch_done"><?php echo esc_html( $heartbeat['batch_done'] ); ?></span> / <span data-as-heartbeat="batch_total"><?php echo esc_html( $heartbeat['batch_total'] ); ?></span> <?php esc_html_e( 'in Processing Queue', 'as-content-stream' ); ?></p>
-					<p><strong><?php esc_html_e( 'Last batch:', 'as-content-stream' ); ?></strong> <span data-as-heartbeat="last_duration"><?php echo esc_html( $heartbeat['last_batch_duration_ms'] ); ?></span>ms</p>
 				</div>
 			</div>
 		</div>
@@ -583,11 +565,9 @@ class AS_Content_Stream {
 								return;
 							}
 							var status = response.data;
-							setText('enabled', status.enabled ? 'On' : 'Off / Manual');
 							setText('next_check', status.next_check_seconds);
 							setText('batch_done', status.batch_done);
 							setText('batch_total', status.batch_total);
-							setText('last_duration', status.last_batch_duration_ms);
 							var bar = root.querySelector('[data-as-heartbeat-bar]');
 							if (bar) {
 								bar.style.width = status.progress_percent + '%';
@@ -1311,12 +1291,18 @@ class AS_Content_Stream {
 		if ( $result_id ) {
 			$dependency = $this->ensure_meta_dependencies_for_job( $job );
 			if ( $dependency ) {
+				if ( $restore ) {
+					restore_current_blog();
+				}
 				return $dependency;
 			}
 
 			$this->copy_source_postmeta_sql_to_destination( $job, (int) $result_id );
 			$featured_result = $this->copy_featured_image_for_job( $job, (int) $result_id );
 			if ( 'failed' === $featured_result['status'] || 'blocked' === $featured_result['status'] ) {
+				if ( $restore ) {
+					restore_current_blog();
+				}
 				return $featured_result;
 			}
 		}
@@ -3863,7 +3849,8 @@ class AS_Content_Stream {
 	 * @return string
 	 */
 	private function admin_url( $args = array() ) {
-		return add_query_arg( array_merge( array( 'page' => self::PAGE_SLUG ), $args ), admin_url( 'admin.php' ) );
+		$admin_url = is_multisite() ? get_admin_url( get_main_site_id(), 'admin.php' ) : admin_url( 'admin.php' );
+		return add_query_arg( array_merge( array( 'page' => self::PAGE_SLUG ), $args ), $admin_url );
 	}
 
 	/**
@@ -3873,7 +3860,8 @@ class AS_Content_Stream {
 	 * @return string
 	 */
 	private function form_action_url( $action ) {
-		return add_query_arg( 'action', $action, admin_url( 'admin-post.php' ) );
+		$admin_post_url = is_multisite() ? get_admin_url( get_main_site_id(), 'admin-post.php' ) : admin_url( 'admin-post.php' );
+		return add_query_arg( 'action', $action, $admin_post_url );
 	}
 
 	/**

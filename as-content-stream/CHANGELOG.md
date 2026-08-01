@@ -2,6 +2,13 @@
 
 All notable changes to AS Content Stream are recorded here.
 
+## 0.1.28 - 2026-08-01
+
+- Removed the redundant Run One Manual Step control from the Heartbeat tile.
+- Removed the Heartbeat mode label and last-batch timing display.
+- Removed the Stream Author tile from Settings while keeping the readiness scan silent.
+- Forced Content Stream admin actions and redirects back to the core site admin after manual processing.
+
 ## 0.1.27 - 2026-08-01
 
 - Added Run controls to Create, Update, and Delete Queue rows to explode a source queue item into Processing Queue.

@@ -1,7 +1,7 @@
 # AS Content Stream
 
 Author: AlphaSys
-Version: 0.1.27
+Version: 0.1.28
 Status: POC
 
 ## Purpose
@@ -22,7 +22,6 @@ AS Content Stream is a network-enabled WordPress plugin scaffold for multisite c
 - Preserves the original source slug for delete processing.
 - Stores the target language setting from available destination languages for future queue processing.
 - Ensures active WPML destination sites have the no-login stream author and integration role.
-- Runs the manual processing test against a single sampled destination job.
 - Adds manual Run controls to Create, Update, and Delete Queue rows to move items into Processing Queue.
 - Links source and destination sites from the Processing Queue and Log tabs.
 - Creates/updates/trashes destination posts from processing jobs with stream identifiers and the integration author.
@@ -63,7 +62,7 @@ as-content-stream/
 - Revision and autosave records are excluded from the queues.
 - Future processors should clear queues in order: create, then update, then delete.
 - Target language defaults to the most common language across destination WPML sites until manually saved.
-- Processing mode is controlled from the Heartbeat tile; off means manual mode.
+- Automatic cron processing is toggled from the Heartbeat tile.
 - Processing Queue shows pending, in-progress, skipped, and failed per-site jobs with manual Run controls; Log shows completed processing jobs only.
 - Log shows the latest 100 completed jobs and can be cleared from the Log tab.
 
