@@ -2,6 +2,11 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.37 - 2026-08-01
+
+- Removed automatic Discovery rebuilds from normal Content Stream admin page loads to keep tab clicks fast.
+- Added Re-run Discovery to Settings so Discovery can be rebuilt manually even when the Discovery tab is hidden.
+
 ## 0.1.36 - 2026-08-01
 
 - Limited Discovery to public post types currently registered on the core site.

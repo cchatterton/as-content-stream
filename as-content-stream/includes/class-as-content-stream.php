@@ -322,11 +322,10 @@ class AS_Content_Stream {
 			wp_die( esc_html__( 'You do not have permission to manage Content Stream.', 'as-content-stream' ) );
 		}
 
+		$active_tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'create_queue';
 		self::create_queue_table();
 		self::create_links_table();
-		$this->refresh_discovery_queue();
 
-		$active_tab = isset( $_GET['tab'] ) ? sanitize_key( wp_unslash( $_GET['tab'] ) ) : 'create_queue';
 		$has_discovery = $this->has_discovery_queue_items();
 		$tabs       = array(
 			'settings'     => __( 'Settings', 'as-content-stream' ),
@@ -534,6 +533,10 @@ class AS_Content_Stream {
 				<p><strong><?php esc_html_e( 'WPML active sites:', 'as-content-stream' ); ?></strong> <?php echo esc_html( count( $wpml_sites ) ); ?></p>
 				<p><strong><?php esc_html_e( 'Pending queue items:', 'as-content-stream' ); ?></strong> <?php echo esc_html( isset( $queue_counts['pending'] ) ? $queue_counts['pending'] : 0 ); ?></p>
 				<p><strong><?php esc_html_e( 'Processing jobs:', 'as-content-stream' ); ?></strong> <?php echo esc_html( $this->format_counts( $processing_counts ) ); ?></p>
+				<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_rerun_discovery' ) ); ?>">
+					<?php wp_nonce_field( self::NONCE_QUEUE ); ?>
+					<?php submit_button( __( 'Re-run Discovery', 'as-content-stream' ), 'secondary', 'submit', false ); ?>
+				</form>
 			</div>
 			<div class="as-content-panel">
 				<h2><?php esc_html_e( 'Heartbeat', 'as-content-stream' ); ?></h2>

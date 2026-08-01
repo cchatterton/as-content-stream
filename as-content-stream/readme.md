@@ -1,7 +1,7 @@
 # Content Stream
 
 Author: AlphaSys
-Version: 0.1.36
+Version: 0.1.37
 Status: POC
 
 ## Purpose
@@ -18,6 +18,7 @@ Content Stream is a network-enabled WordPress plugin scaffold for multisite cont
 - Shows a temporary Discovery Queue tab when published source content is not fully mapped.
 - Limits Discovery to public post types currently registered on the core site.
 - Provides a manual Re-run Discovery button to clear and rebuild Discovery queue rows.
+- Keeps Discovery rebuilds manual so normal Content Stream tab clicks stay fast.
 - Keeps Settings and Sites & WPML tabs visible alongside the queue tabs.
 - Shows post title, post name, and an edit link in queue rows.
 - De-duplicates pending queue rows for the same source post/action/post type.
