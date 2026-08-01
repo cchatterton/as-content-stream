@@ -39,6 +39,17 @@
 	padding-top: 14px;
 }
 
+.as-content-inline-form {
+	align-items: center;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.as-content-inline-form input[type="number"] {
+	max-width: 140px;
+}
+
 .as-content-progress {
 	background: #f0f0f1;
 	border: 1px solid #dcdcde;

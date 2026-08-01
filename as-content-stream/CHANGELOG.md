@@ -2,6 +2,14 @@
 
 All notable changes to AS Content Stream are recorded here.
 
+## 0.1.25 - 2026-08-01
+
+- Added a dedicated source/destination links table.
+- Added a Links tab with post ID lookup across source and destination IDs.
+- Added per-link Run controls to manually push a single mapped relationship.
+- Moved canonical destination lookup and relationship tracking away from postmeta and into the links table.
+- Added link IDs to processing jobs where known.
+
 ## 0.1.24 - 2026-08-01
 
 - Changed Processing Queue controls to show a manual Run button for every non-complete job.

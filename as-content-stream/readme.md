@@ -1,7 +1,7 @@
 # AS Content Stream
 
 Author: AlphaSys
-Version: 0.1.24
+Version: 0.1.25
 Status: POC
 
 ## Purpose
@@ -28,6 +28,7 @@ AS Content Stream is a network-enabled WordPress plugin scaffold for multisite c
 - Keeps failed processing jobs out of Log and available for retry in Processing Queue.
 - Copies source post content and postmeta to destination posts with SQL.
 - Adds a manual Run control to every item in the Processing Queue.
+- Tracks source/destination relationships in a dedicated links table with an interactive Links tab.
 - Supports WordPress-native updates from GitHub releases.
 
 ## Folder Structure
@@ -54,6 +55,7 @@ as-content-stream/
 - WPML active status reflects live plugin activation for that site, not historical WPML settings.
 - GitHub releases must include `as-content-stream.zip` as a release asset.
 - Processing jobs copy source post content and postmeta with SQL; newly-created destination posts are forced to draft.
+- Source/destination relationships are stored in `wp_as_content_stream_links`, not postmeta.
 - Revision and autosave records are excluded from the queues.
 - Future processors should clear queues in order: create, then update, then delete.
 - Target language defaults to the most common language across destination WPML sites until manually saved.

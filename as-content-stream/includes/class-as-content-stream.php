@@ -29,14 +29,6 @@ class AS_Content_Stream {
 	const STREAM_AUTHOR_EMAIL    = 'as-content-stream@invalid.local';
 	const STREAM_AUTHOR_ROLE     = 'integration';
 	const STREAM_AUTHOR_META     = '_as_content_stream_user';
-	const META_SOURCE_UUID       = '_as_content_stream_uuid';
-	const META_SOURCE_BLOG_ID    = '_as_content_stream_source_blog_id';
-	const META_SOURCE_POST_ID    = '_as_content_stream_source_post_id';
-	const META_SOURCE_POST_TYPE  = '_as_content_stream_source_post_type';
-	const META_SOURCE_SLUG       = '_as_content_stream_source_slug';
-	const META_TARGET_LANGUAGE   = '_as_content_stream_target_language';
-	const META_DESTINATION_MAP   = '_as_content_stream_destinations';
-	const META_MANAGED           = '_as_content_stream_managed';
 
 	/**
 	 * Singleton instance.
@@ -73,6 +65,7 @@ class AS_Content_Stream {
 	public static function activate() {
 		self::create_queue_table();
 		self::create_processing_queue_table();
+		self::create_links_table();
 
 		if ( get_site_option( self::OPTION_PROCESSING_ENABLED, false ) ) {
 			self::schedule_cron();
@@ -97,6 +90,7 @@ class AS_Content_Stream {
 		add_action( 'admin_post_as_content_stream_clear_queue', array( $this, 'clear_queue' ) );
 		add_action( 'admin_post_as_content_stream_clear_log', array( $this, 'clear_log' ) );
 		add_action( 'admin_post_as_content_stream_run_processing_job', array( $this, 'run_processing_job' ) );
+		add_action( 'admin_post_as_content_stream_run_link', array( $this, 'run_link' ) );
 		add_action( 'admin_post_as_content_stream_test_tick', array( $this, 'run_test_tick' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ) );
 		add_action( 'wp_ajax_as_content_stream_heartbeat', array( $this, 'ajax_heartbeat' ) );
@@ -168,6 +162,7 @@ class AS_Content_Stream {
 			started_at datetime NULL,
 			completed_at datetime NULL,
 			parent_queue_id bigint(20) unsigned NOT NULL,
+			link_id bigint(20) unsigned NOT NULL DEFAULT 0,
 			action varchar(20) NOT NULL,
 			status varchar(20) NOT NULL DEFAULT 'pending',
 			source_blog_id bigint(20) unsigned NOT NULL,
@@ -180,10 +175,54 @@ class AS_Content_Stream {
 			attempts int(11) unsigned NOT NULL DEFAULT 0,
 			duration_ms bigint(20) unsigned NOT NULL DEFAULT 0,
 			PRIMARY KEY  (id),
+			KEY link_id (link_id),
 			KEY parent_status (parent_queue_id, status),
 			KEY status (status),
 			KEY action_status (action, status),
 			KEY target_blog (target_blog_id)
+		) {$charset_collate};";
+
+		dbDelta( $sql );
+	}
+
+	/**
+	 * Create global source/destination links table.
+	 *
+	 * @return void
+	 */
+	private static function create_links_table() {
+		global $wpdb;
+
+		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+
+		$table_name      = self::links_table_name();
+		$charset_collate = $wpdb->get_charset_collate();
+
+		$sql = "CREATE TABLE {$table_name} (
+			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
+			created_at datetime NOT NULL,
+			updated_at datetime NOT NULL,
+			last_streamed_at datetime NULL,
+			source_uuid varchar(64) NOT NULL,
+			source_blog_id bigint(20) unsigned NOT NULL,
+			source_post_id bigint(20) unsigned NOT NULL,
+			source_post_type varchar(64) NOT NULL,
+			source_slug varchar(200) NOT NULL,
+			target_blog_id bigint(20) unsigned NOT NULL,
+			target_post_id bigint(20) unsigned NOT NULL,
+			target_language varchar(20) NOT NULL,
+			target_slug varchar(200) NOT NULL,
+			status varchar(20) NOT NULL DEFAULT 'active',
+			last_action varchar(20) NOT NULL DEFAULT '',
+			last_queue_id bigint(20) unsigned NOT NULL DEFAULT 0,
+			last_processing_job_id bigint(20) unsigned NOT NULL DEFAULT 0,
+			PRIMARY KEY  (id),
+			UNIQUE KEY source_target_language (source_uuid, target_blog_id, target_language),
+			KEY source_post (source_blog_id, source_post_id),
+			KEY target_post (target_blog_id, target_post_id),
+			KEY lookup_source_id (source_post_id),
+			KEY lookup_target_id (target_post_id),
+			KEY source_slug (source_slug, source_post_type, target_language)
 		) {$charset_collate};";
 
 		dbDelta( $sql );
@@ -209,6 +248,17 @@ class AS_Content_Stream {
 		global $wpdb;
 
 		return $wpdb->base_prefix . 'as_content_stream_processing_queue';
+	}
+
+	/**
+	 * Get links table name.
+	 *
+	 * @return string
+	 */
+	private static function links_table_name() {
+		global $wpdb;
+
+		return $wpdb->base_prefix . 'as_content_stream_links';
 	}
 
 	/**
@@ -275,6 +325,7 @@ class AS_Content_Stream {
 			'update_queue' => __( 'Update Queue', 'as-content-stream' ),
 			'delete_queue' => __( 'Delete Queue', 'as-content-stream' ),
 			'processing_queue' => __( 'Processing Queue', 'as-content-stream' ),
+			'links'        => __( 'Links', 'as-content-stream' ),
 			'log'          => __( 'Log', 'as-content-stream' ),
 		);
 
@@ -318,6 +369,9 @@ class AS_Content_Stream {
 					break;
 				case 'processing_queue':
 					$this->render_processing_queue_tab();
+					break;
+				case 'links':
+					$this->render_links_tab();
 					break;
 				case 'log':
 					$this->render_log_tab();
@@ -730,6 +784,72 @@ class AS_Content_Stream {
 	}
 
 	/**
+	 * Render source/destination links.
+	 *
+	 * @return void
+	 */
+	private function render_links_tab() {
+		$lookup_id = isset( $_GET['lookup_id'] ) ? absint( $_GET['lookup_id'] ) : 0;
+		$links = $this->get_links( $lookup_id );
+		?>
+		<div class="as-content-queue-actions">
+			<form method="get" action="<?php echo esc_url( admin_url( 'admin.php' ) ); ?>" class="as-content-inline-form">
+				<input type="hidden" name="page" value="<?php echo esc_attr( self::PAGE_SLUG ); ?>">
+				<input type="hidden" name="tab" value="links">
+				<label for="as-content-link-lookup"><?php esc_html_e( 'Post ID lookup', 'as-content-stream' ); ?></label>
+				<input id="as-content-link-lookup" type="number" min="1" name="lookup_id" value="<?php echo esc_attr( $lookup_id ? $lookup_id : '' ); ?>">
+				<?php submit_button( __( 'Find', 'as-content-stream' ), 'secondary', 'submit', false ); ?>
+				<?php if ( $lookup_id ) : ?>
+					<a class="button" href="<?php echo esc_url( $this->admin_url( array( 'tab' => 'links' ) ) ); ?>"><?php esc_html_e( 'Clear', 'as-content-stream' ); ?></a>
+				<?php endif; ?>
+			</form>
+			<p><?php echo esc_html( $lookup_id ? __( 'Showing links where that ID is source or destination.', 'as-content-stream' ) : __( 'Showing the latest 100 links.', 'as-content-stream' ) ); ?></p>
+		</div>
+		<table class="widefat striped as-content-queue">
+			<thead>
+				<tr>
+					<th><?php esc_html_e( 'Link', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Source', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Run', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Destination', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Language', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Status', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Last Action', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Last Streamed', 'as-content-stream' ); ?></th>
+				</tr>
+			</thead>
+			<tbody>
+				<?php if ( empty( $links ) ) : ?>
+					<tr><td colspan="8"><?php esc_html_e( 'No source/destination links found.', 'as-content-stream' ); ?></td></tr>
+				<?php endif; ?>
+				<?php foreach ( $links as $link ) : ?>
+					<?php
+					$source_url = $this->source_edit_url( (int) $link->source_blog_id, (int) $link->source_post_id );
+					$target_url = $this->source_edit_url( (int) $link->target_blog_id, (int) $link->target_post_id );
+					?>
+					<tr>
+						<td><?php echo esc_html( '#' . (int) $link->id ); ?></td>
+						<td><a href="<?php echo esc_url( $source_url ? $source_url : $this->site_admin_url( (int) $link->source_blog_id ) ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $this->site_label( (int) $link->source_blog_id ) . ' #' . (int) $link->source_post_id ); ?></a></td>
+						<td>
+							<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_run_link' ) ); ?>">
+								<?php wp_nonce_field( self::NONCE_PROCESSING ); ?>
+								<input type="hidden" name="link_id" value="<?php echo esc_attr( (int) $link->id ); ?>">
+								<?php submit_button( __( 'Run', 'as-content-stream' ), 'secondary small', 'submit', false ); ?>
+							</form>
+						</td>
+						<td><a href="<?php echo esc_url( $target_url ? $target_url : $this->site_admin_url( (int) $link->target_blog_id ) ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $this->site_label( (int) $link->target_blog_id ) . ' #' . (int) $link->target_post_id ); ?></a></td>
+						<td><?php echo esc_html( $link->target_language ); ?></td>
+						<td><?php echo esc_html( ucfirst( $link->status ) ); ?></td>
+						<td><?php echo esc_html( ucfirst( $link->last_action ) ); ?></td>
+						<td><?php echo esc_html( $link->last_streamed_at ? $link->last_streamed_at : '-' ); ?></td>
+					</tr>
+				<?php endforeach; ?>
+			</tbody>
+		</table>
+		<?php
+	}
+
+	/**
 	 * Save settings.
 	 *
 	 * @return void
@@ -974,11 +1094,20 @@ class AS_Content_Stream {
 				continue;
 			}
 
+			$payload = $this->decode_queue_payload( $source_item->payload );
+			$payload['target_language'] = sanitize_key( $target_language );
+			$link_id = 0;
+			if ( ! empty( $payload['source_uuid'] ) ) {
+				$link = $this->get_link_for_source_target( sanitize_text_field( $payload['source_uuid'] ), (int) $target['blog_id'], sanitize_key( $target_language ) );
+				$link_id = $link ? (int) $link->id : 0;
+			}
+
 			$inserted = $wpdb->insert(
 				self::processing_queue_table_name(),
 				array(
 					'created_at'      => current_time( 'mysql', true ),
 					'parent_queue_id' => (int) $source_item->id,
+					'link_id'         => $link_id,
 					'action'          => sanitize_key( $source_item->action ),
 					'status'          => 'pending',
 					'source_blog_id'  => (int) $source_item->source_blog_id,
@@ -986,9 +1115,9 @@ class AS_Content_Stream {
 					'target_blog_id'  => (int) $target['blog_id'],
 					'target_language' => sanitize_key( $target_language ),
 					'post_type'       => sanitize_key( $source_item->post_type ),
-					'payload'         => $source_item->payload,
+					'payload'         => wp_json_encode( $payload ),
 				),
-				array( '%s', '%d', '%s', '%s', '%d', '%d', '%d', '%s', '%s', '%s' )
+				array( '%s', '%d', '%d', '%s', '%s', '%d', '%d', '%d', '%s', '%s', '%s' )
 			);
 
 			if ( $inserted ) {
@@ -1164,14 +1293,15 @@ class AS_Content_Stream {
 			return $this->processing_result( 'failed', __( 'Unable to copy source post SQL to destination.', 'as-content-stream' ) );
 		}
 
-		$this->store_destination_identifiers( (int) $result_id, $job, $payload );
+		$link_id = $this->upsert_link( $job, (int) $result_id, $payload );
+		if ( $link_id ) {
+			$this->set_processing_job_link_id( (int) $job->id, $link_id );
+		}
 		$this->set_wpml_language_for_destination( (int) $result_id, $job );
 
 		if ( $restore ) {
 			restore_current_blog();
 		}
-
-		$this->store_source_destination_mapping( $job, (int) $result_id, $payload );
 
 		return $this->processing_result( 'complete', sprintf( '%s #%d', $message, (int) $result_id ) );
 	}
@@ -1213,6 +1343,8 @@ class AS_Content_Stream {
 			return $this->processing_result( 'failed', __( 'Unable to move destination to trash.', 'as-content-stream' ) );
 		}
 
+		$this->mark_link_deleted( $job, $existing_id, $payload );
+
 		return $this->processing_result( 'complete', sprintf( __( 'Destination post moved to trash. #%d', 'as-content-stream' ), (int) $existing_id ) );
 	}
 
@@ -1252,7 +1384,7 @@ class AS_Content_Stream {
 			$payload = array_merge(
 				$payload,
 				array(
-					'source_uuid'        => $this->ensure_source_stream_uuid( (int) $job->source_post_id ),
+					'source_uuid'        => $this->get_or_create_source_uuid( (int) $job->source_blog_id, (int) $job->source_post_id ),
 					'post_title'         => $post->post_title,
 					'post_status'        => $post->post_status,
 					'post_name'          => $post->post_name,
@@ -1304,19 +1436,9 @@ class AS_Content_Stream {
 		$source_uuid = isset( $payload['source_uuid'] ) ? sanitize_text_field( $payload['source_uuid'] ) : '';
 
 		if ( '' !== $source_uuid ) {
-			$matches = get_posts(
-				array(
-					'post_type'      => sanitize_key( $job->post_type ),
-					'post_status'    => array( 'publish', 'future', 'draft', 'pending', 'private', 'trash' ),
-					'fields'         => 'ids',
-					'posts_per_page' => 1,
-					'meta_key'       => self::META_SOURCE_UUID,
-					'meta_value'     => $source_uuid,
-				)
-			);
-
-			if ( ! empty( $matches ) ) {
-				return (int) $matches[0];
+			$link = $this->get_link_for_source_target( $source_uuid, (int) $job->target_blog_id, sanitize_key( $job->target_language ) );
+			if ( $link && ! empty( $link->target_post_id ) ) {
+				return (int) $link->target_post_id;
 			}
 		}
 
@@ -1375,7 +1497,10 @@ class AS_Content_Stream {
 			return 0;
 		}
 
-		return (int) $wpdb->insert_id;
+		$insert_id = (int) $wpdb->insert_id;
+		clean_post_cache( $insert_id );
+
+		return $insert_id;
 	}
 
 	/**
@@ -1413,54 +1538,225 @@ class AS_Content_Stream {
 	}
 
 	/**
-	 * Store destination reverse identifiers.
+	 * Upsert a source/destination link record.
 	 *
-	 * @param int                 $destination_post_id Destination post ID.
 	 * @param object              $job Processing job.
+	 * @param int                 $destination_post_id Destination post ID.
 	 * @param array<string,mixed> $payload Queue payload.
-	 * @return void
+	 * @return int
 	 */
-	private function store_destination_identifiers( $destination_post_id, $job, $payload ) {
-		update_post_meta( $destination_post_id, self::META_SOURCE_UUID, isset( $payload['source_uuid'] ) ? sanitize_text_field( $payload['source_uuid'] ) : '' );
-		update_post_meta( $destination_post_id, self::META_SOURCE_BLOG_ID, (int) $job->source_blog_id );
-		update_post_meta( $destination_post_id, self::META_SOURCE_POST_ID, (int) $job->source_post_id );
-		update_post_meta( $destination_post_id, self::META_SOURCE_POST_TYPE, sanitize_key( $job->post_type ) );
-		update_post_meta( $destination_post_id, self::META_SOURCE_SLUG, isset( $payload['original_post_name'] ) ? sanitize_title( $payload['original_post_name'] ) : '' );
-		update_post_meta( $destination_post_id, self::META_TARGET_LANGUAGE, sanitize_key( $job->target_language ) );
-		update_post_meta( $destination_post_id, self::META_MANAGED, 1 );
+	private function upsert_link( $job, $destination_post_id, $payload ) {
+		global $wpdb;
 
+		self::create_links_table();
+
+		$source_uuid = isset( $payload['source_uuid'] ) ? sanitize_text_field( $payload['source_uuid'] ) : '';
+		if ( '' === $source_uuid ) {
+			$source_uuid = wp_generate_uuid4();
+		}
+
+		$source_slug = isset( $payload['original_post_name'] ) && '' !== $payload['original_post_name'] ? sanitize_title( $payload['original_post_name'] ) : sanitize_title( isset( $payload['post_name'] ) ? $payload['post_name'] : '' );
+		$target_slug = $this->get_post_slug_from_site( (int) $job->target_blog_id, $destination_post_id );
+		$link = $this->get_link_for_source_target( $source_uuid, (int) $job->target_blog_id, sanitize_key( $job->target_language ) );
+		$data = array(
+			'updated_at'              => current_time( 'mysql', true ),
+			'last_streamed_at'        => current_time( 'mysql', true ),
+			'source_uuid'             => $source_uuid,
+			'source_blog_id'          => (int) $job->source_blog_id,
+			'source_post_id'          => (int) $job->source_post_id,
+			'source_post_type'        => sanitize_key( $job->post_type ),
+			'source_slug'             => $source_slug,
+			'target_blog_id'          => (int) $job->target_blog_id,
+			'target_post_id'          => $destination_post_id,
+			'target_language'         => sanitize_key( $job->target_language ),
+			'target_slug'             => $target_slug,
+			'status'                  => 'active',
+			'last_action'             => sanitize_key( $job->action ),
+			'last_queue_id'           => (int) $job->parent_queue_id,
+			'last_processing_job_id'  => (int) $job->id,
+		);
+		$formats = array( '%s', '%s', '%s', '%d', '%d', '%s', '%s', '%d', '%d', '%s', '%s', '%s', '%s', '%d', '%d' );
+
+		if ( $link ) {
+			$wpdb->update( self::links_table_name(), $data, array( 'id' => (int) $link->id ), $formats, array( '%d' ) );
+			return (int) $link->id;
+		}
+
+		$data['created_at'] = current_time( 'mysql', true );
+		$wpdb->insert(
+			self::links_table_name(),
+			$data,
+			array_merge( $formats, array( '%s' ) )
+		);
+
+		return (int) $wpdb->insert_id;
 	}
 
 	/**
-	 * Store the destination mapping on the source post.
+	 * Mark an existing link as deleted.
 	 *
 	 * @param object              $job Processing job.
 	 * @param int                 $destination_post_id Destination post ID.
 	 * @param array<string,mixed> $payload Queue payload.
 	 * @return void
 	 */
-	private function store_source_destination_mapping( $job, $destination_post_id, $payload ) {
-		$restore = get_current_blog_id() !== (int) $job->source_blog_id;
-		if ( $restore ) {
-			switch_to_blog( (int) $job->source_blog_id );
+	private function mark_link_deleted( $job, $destination_post_id, $payload ) {
+		global $wpdb;
+
+		$source_uuid = isset( $payload['source_uuid'] ) ? sanitize_text_field( $payload['source_uuid'] ) : '';
+		if ( '' === $source_uuid ) {
+			return;
 		}
 
-		$map = get_post_meta( (int) $job->source_post_id, self::META_DESTINATION_MAP, true );
-		$map = is_array( $map ) ? $map : array();
-		$key = (int) $job->target_blog_id . ':' . sanitize_key( $job->target_language );
-		$map[ $key ] = array(
-			'target_blog_id'      => (int) $job->target_blog_id,
-			'target_language'     => sanitize_key( $job->target_language ),
-			'destination_post_id' => (int) $destination_post_id,
-			'source_uuid'         => isset( $payload['source_uuid'] ) ? sanitize_text_field( $payload['source_uuid'] ) : '',
-			'source_slug'         => isset( $payload['original_post_name'] ) ? sanitize_title( $payload['original_post_name'] ) : '',
-			'last_streamed_at'    => current_time( 'mysql', true ),
+		$link = $this->get_link_for_source_target( $source_uuid, (int) $job->target_blog_id, sanitize_key( $job->target_language ) );
+		if ( ! $link ) {
+			return;
+		}
+
+		$wpdb->update(
+			self::links_table_name(),
+			array(
+				'updated_at'             => current_time( 'mysql', true ),
+				'last_streamed_at'       => current_time( 'mysql', true ),
+				'target_post_id'         => $destination_post_id,
+				'status'                 => 'trashed',
+				'last_action'            => 'delete',
+				'last_queue_id'          => (int) $job->parent_queue_id,
+				'last_processing_job_id' => (int) $job->id,
+			),
+			array( 'id' => (int) $link->id ),
+			array( '%s', '%s', '%d', '%s', '%s', '%d', '%d' ),
+			array( '%d' )
 		);
-		update_post_meta( (int) $job->source_post_id, self::META_DESTINATION_MAP, $map );
+	}
+
+	/**
+	 * Get one link by ID.
+	 *
+	 * @param int $link_id Link ID.
+	 * @return object|null
+	 */
+	private function get_link( $link_id ) {
+		global $wpdb;
+
+		self::create_links_table();
+
+		return $wpdb->get_row(
+			$wpdb->prepare(
+				'SELECT * FROM ' . self::links_table_name() . ' WHERE id = %d LIMIT 1',
+				$link_id
+			)
+		);
+	}
+
+	/**
+	 * Get links, optionally filtered by source or destination post ID.
+	 *
+	 * @param int $lookup_id Optional post ID lookup.
+	 * @return array<int,object>
+	 */
+	private function get_links( $lookup_id = 0 ) {
+		global $wpdb;
+
+		self::create_links_table();
+
+		if ( $lookup_id ) {
+			return $wpdb->get_results(
+				$wpdb->prepare(
+					'SELECT * FROM ' . self::links_table_name() . ' WHERE source_post_id = %d OR target_post_id = %d ORDER BY updated_at DESC LIMIT 100',
+					$lookup_id,
+					$lookup_id
+				)
+			);
+		}
+
+		return $wpdb->get_results( 'SELECT * FROM ' . self::links_table_name() . ' ORDER BY updated_at DESC LIMIT 100' );
+	}
+
+	/**
+	 * Find a link for a source UUID, destination site, and target language.
+	 *
+	 * @param string $source_uuid Source UUID.
+	 * @param int    $target_blog_id Target blog ID.
+	 * @param string $target_language Target language.
+	 * @return object|null
+	 */
+	private function get_link_for_source_target( $source_uuid, $target_blog_id, $target_language ) {
+		global $wpdb;
+
+		self::create_links_table();
+
+		return $wpdb->get_row(
+			$wpdb->prepare(
+				'SELECT * FROM ' . self::links_table_name() . ' WHERE source_uuid = %s AND target_blog_id = %d AND target_language = %s LIMIT 1',
+				sanitize_text_field( $source_uuid ),
+				$target_blog_id,
+				sanitize_key( $target_language )
+			)
+		);
+	}
+
+	/**
+	 * Get an existing source UUID from links.
+	 *
+	 * @param int $source_blog_id Source blog ID.
+	 * @param int $source_post_id Source post ID.
+	 * @return string
+	 */
+	private function get_source_uuid_from_links( $source_blog_id, $source_post_id ) {
+		global $wpdb;
+
+		self::create_links_table();
+
+		return (string) $wpdb->get_var(
+			$wpdb->prepare(
+				'SELECT source_uuid FROM ' . self::links_table_name() . ' WHERE source_blog_id = %d AND source_post_id = %d ORDER BY id ASC LIMIT 1',
+				$source_blog_id,
+				$source_post_id
+			)
+		);
+	}
+
+	/**
+	 * Get a post slug from a site.
+	 *
+	 * @param int $blog_id Blog ID.
+	 * @param int $post_id Post ID.
+	 * @return string
+	 */
+	private function get_post_slug_from_site( $blog_id, $post_id ) {
+		$restore = get_current_blog_id() !== $blog_id;
+		if ( $restore ) {
+			switch_to_blog( $blog_id );
+		}
+
+		$post = get_post( $post_id );
+		$slug = $post instanceof WP_Post ? sanitize_title( $post->post_name ) : '';
 
 		if ( $restore ) {
 			restore_current_blog();
 		}
+
+		return $slug;
+	}
+
+	/**
+	 * Store a link ID on a processing job.
+	 *
+	 * @param int $job_id Processing job ID.
+	 * @param int $link_id Link ID.
+	 * @return void
+	 */
+	private function set_processing_job_link_id( $job_id, $link_id ) {
+		global $wpdb;
+
+		$wpdb->update(
+			self::processing_queue_table_name(),
+			array( 'link_id' => $link_id ),
+			array( 'id' => $job_id ),
+			array( '%d' ),
+			array( '%d' )
+		);
 	}
 
 	/**
@@ -1589,6 +1885,117 @@ class AS_Content_Stream {
 	}
 
 	/**
+	 * Run a link manually.
+	 *
+	 * @return void
+	 */
+	public function run_link() {
+		if ( ! is_multisite() || ! is_main_site() || ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You do not have permission to update AS Content Stream.', 'as-content-stream' ) );
+		}
+
+		check_admin_referer( self::NONCE_PROCESSING );
+
+		$link_id = isset( $_POST['link_id'] ) ? absint( $_POST['link_id'] ) : 0;
+		if ( $link_id ) {
+			$link = $this->get_link( $link_id );
+			if ( $link ) {
+				$job = $this->create_processing_job_from_link( $link );
+				if ( $job ) {
+					$this->process_processing_job_row( $job );
+				}
+			}
+		}
+
+		wp_safe_redirect( $this->admin_url( array( 'tab' => 'links', 'updated' => 1 ) ) );
+		exit;
+	}
+
+	/**
+	 * Create one processing job from a link.
+	 *
+	 * @param object $link Link row.
+	 * @return object|null
+	 */
+	private function create_processing_job_from_link( $link ) {
+		global $wpdb;
+
+		self::create_processing_queue_table();
+
+		$payload = $this->build_source_payload_for_link( $link );
+		$inserted = $wpdb->insert(
+			self::processing_queue_table_name(),
+			array(
+				'created_at'      => current_time( 'mysql', true ),
+				'parent_queue_id' => 0,
+				'link_id'         => (int) $link->id,
+				'action'          => 'update',
+				'status'          => 'pending',
+				'source_blog_id'  => (int) $link->source_blog_id,
+				'source_post_id'  => (int) $link->source_post_id,
+				'target_blog_id'  => (int) $link->target_blog_id,
+				'target_language' => sanitize_key( $link->target_language ),
+				'post_type'       => sanitize_key( $link->source_post_type ),
+				'payload'         => wp_json_encode( $payload ),
+			),
+			array( '%s', '%d', '%d', '%s', '%s', '%d', '%d', '%d', '%s', '%s', '%s' )
+		);
+
+		if ( ! $inserted ) {
+			return null;
+		}
+
+		return $wpdb->get_row(
+			$wpdb->prepare(
+				'SELECT * FROM ' . self::processing_queue_table_name() . ' WHERE id = %d LIMIT 1',
+				(int) $wpdb->insert_id
+			)
+		);
+	}
+
+	/**
+	 * Build source payload for one link.
+	 *
+	 * @param object $link Link row.
+	 * @return array<string,mixed>
+	 */
+	private function build_source_payload_for_link( $link ) {
+		$payload = array(
+			'source_uuid'        => sanitize_text_field( $link->source_uuid ),
+			'post_name'          => sanitize_title( $link->source_slug ),
+			'original_post_name' => sanitize_title( $link->source_slug ),
+			'target_language'    => sanitize_key( $link->target_language ),
+		);
+
+		$restore = get_current_blog_id() !== (int) $link->source_blog_id;
+		if ( $restore ) {
+			switch_to_blog( (int) $link->source_blog_id );
+		}
+
+		$post = get_post( (int) $link->source_post_id );
+		if ( $post instanceof WP_Post ) {
+			$payload = array_merge(
+				$payload,
+				array(
+					'post_title'        => $post->post_title,
+					'post_status'       => $post->post_status,
+					'post_name'         => $post->post_name,
+					'post_date'         => $post->post_date,
+					'post_date_gmt'     => $post->post_date_gmt,
+					'post_modified'     => $post->post_modified,
+					'post_modified_gmt' => $post->post_modified_gmt,
+				)
+			);
+		}
+
+		if ( $restore ) {
+			restore_current_blog();
+		}
+
+		return $payload;
+	}
+
+	/**
 	 * Capture create/update events after WordPress has finished inserting the post.
 	 *
 	 * @param int          $post_id Post ID.
@@ -1661,7 +2068,7 @@ class AS_Content_Stream {
 		}
 
 		$this->queue_locks[ $source_post_id ] = true;
-		$source_uuid = $this->ensure_source_stream_uuid( $source_post_id );
+		$source_uuid = $this->get_or_create_source_uuid( $source_blog_id, $source_post_id );
 
 		$this->insert_queue_item(
 			array(
@@ -1823,20 +2230,16 @@ class AS_Content_Stream {
 	}
 
 	/**
-	 * Ensure a source post has a stable stream UUID.
+	 * Get an existing source UUID from links, or create one for a new relationship batch.
 	 *
+	 * @param int $source_blog_id Source blog ID.
 	 * @param int $post_id Post ID.
 	 * @return string
 	 */
-	private function ensure_source_stream_uuid( $post_id ) {
-		$uuid = (string) get_post_meta( $post_id, self::META_SOURCE_UUID, true );
+	private function get_or_create_source_uuid( $source_blog_id, $post_id ) {
+		$uuid = $this->get_source_uuid_from_links( $source_blog_id, $post_id );
 
-		if ( '' === $uuid ) {
-			$uuid = wp_generate_uuid4();
-			update_post_meta( $post_id, self::META_SOURCE_UUID, $uuid );
-		}
-
-		return $uuid;
+		return '' !== $uuid ? $uuid : wp_generate_uuid4();
 	}
 
 	/**
@@ -1898,22 +2301,22 @@ class AS_Content_Stream {
 			return '';
 		}
 
+		$target_language = isset( $payload['target_language'] ) ? sanitize_key( $payload['target_language'] ) : '';
+		if ( '' !== $target_language ) {
+			$link = $this->get_link_for_source_target( $source_uuid, $blog_id, $target_language );
+			if ( $link && ! empty( $link->target_post_id ) ) {
+				return $this->source_edit_url( $blog_id, (int) $link->target_post_id );
+			}
+		}
+
 		$restore = is_multisite() && get_current_blog_id() !== $blog_id;
 		if ( $restore ) {
 			switch_to_blog( $blog_id );
 		}
 
-		$matches = get_posts(
-			array(
-				'post_type'      => sanitize_key( $post_type ),
-				'post_status'    => array( 'publish', 'future', 'draft', 'pending', 'private', 'trash' ),
-				'fields'         => 'ids',
-				'posts_per_page' => 1,
-				'meta_key'       => self::META_SOURCE_UUID,
-				'meta_value'     => $source_uuid,
-			)
-		);
-		$url = empty( $matches ) ? '' : get_edit_post_link( (int) $matches[0], 'raw' );
+		$slug = isset( $payload['original_post_name'] ) && '' !== $payload['original_post_name'] ? sanitize_title( $payload['original_post_name'] ) : sanitize_title( isset( $payload['post_name'] ) ? $payload['post_name'] : '' );
+		$post = '' !== $slug ? get_page_by_path( $slug, OBJECT, sanitize_key( $post_type ) ) : null;
+		$url = $post instanceof WP_Post ? get_edit_post_link( (int) $post->ID, 'raw' ) : '';
 
 		if ( $restore ) {
 			restore_current_blog();
