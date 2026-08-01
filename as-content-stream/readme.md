@@ -1,7 +1,7 @@
 # AS Content Stream
 
 Author: AlphaSys
-Version: 0.1.20
+Version: 0.1.21
 Status: POC
 
 ## Purpose
@@ -22,6 +22,8 @@ AS Content Stream is a network-enabled WordPress plugin scaffold for multisite c
 - Preserves the original source slug for delete processing.
 - Stores the target language setting from available destination languages for future queue processing.
 - Ensures active WPML destination sites have the no-login stream author and integration role.
+- Runs the manual processing test against a single sampled destination job.
+- Links source and destination sites from the Processing Queue and Log tabs.
 - Supports WordPress-native updates from GitHub releases.
 
 ## Folder Structure

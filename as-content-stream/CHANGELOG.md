@@ -2,6 +2,12 @@
 
 All notable changes to AS Content Stream are recorded here.
 
+## 0.1.21 - 2026-08-01
+
+- Changed the manual processing test tick to create and process only one sampled destination job.
+- Kept manual test ticks from consuming the source queue item.
+- Added new-tab source and destination links to Processing Queue and Log rows.
+
 ## 0.1.20 - 2026-08-01
 
 - Added a Clear Log button for terminal processing jobs.

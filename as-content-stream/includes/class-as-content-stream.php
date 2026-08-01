@@ -628,13 +628,18 @@ class AS_Content_Stream {
 					<tr><td colspan="10"><?php esc_html_e( 'No processing jobs yet.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
 				<?php foreach ( $items as $item ) : ?>
+					<?php
+					$source_url = $this->source_edit_url( (int) $item->source_blog_id, (int) $item->source_post_id );
+					$source_url = $source_url ? $source_url : $this->site_admin_url( (int) $item->source_blog_id );
+					$target_url = $this->site_admin_url( (int) $item->target_blog_id );
+					?>
 					<tr>
 						<td><?php echo esc_html( $item->created_at ); ?></td>
 						<td><?php echo esc_html( '#' . (int) $item->parent_queue_id ); ?></td>
 						<td><?php echo esc_html( ucfirst( $item->action ) ); ?></td>
 						<td><?php echo esc_html( ucfirst( $item->status ) ); ?></td>
-						<td><?php echo esc_html( $this->site_label( (int) $item->source_blog_id ) . ' #' . (int) $item->source_post_id ); ?></td>
-						<td><?php echo esc_html( $this->site_label( (int) $item->target_blog_id ) ); ?></td>
+						<td><a href="<?php echo esc_url( $source_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $this->site_label( (int) $item->source_blog_id ) . ' #' . (int) $item->source_post_id ); ?></a></td>
+						<td><a href="<?php echo esc_url( $target_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $this->site_label( (int) $item->target_blog_id ) ); ?></a></td>
 						<td><?php echo esc_html( $item->target_language ); ?></td>
 						<td><?php echo esc_html( (int) $item->attempts ); ?></td>
 						<td><?php echo esc_html( (int) $item->duration_ms . 'ms' ); ?></td>
@@ -680,13 +685,18 @@ class AS_Content_Stream {
 					<tr><td colspan="9"><?php esc_html_e( 'No completed processing jobs yet.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
 				<?php foreach ( $items as $item ) : ?>
+					<?php
+					$source_url = $this->source_edit_url( (int) $item->source_blog_id, (int) $item->source_post_id );
+					$source_url = $source_url ? $source_url : $this->site_admin_url( (int) $item->source_blog_id );
+					$target_url = $this->site_admin_url( (int) $item->target_blog_id );
+					?>
 					<tr>
 						<td><?php echo esc_html( $item->completed_at ); ?></td>
 						<td><?php echo esc_html( '#' . (int) $item->parent_queue_id ); ?></td>
 						<td><?php echo esc_html( ucfirst( $item->action ) ); ?></td>
 						<td><?php echo esc_html( ucfirst( $item->status ) ); ?></td>
-						<td><?php echo esc_html( $this->site_label( (int) $item->source_blog_id ) . ' #' . (int) $item->source_post_id ); ?></td>
-						<td><?php echo esc_html( $this->site_label( (int) $item->target_blog_id ) ); ?></td>
+						<td><a href="<?php echo esc_url( $source_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $this->site_label( (int) $item->source_blog_id ) . ' #' . (int) $item->source_post_id ); ?></a></td>
+						<td><a href="<?php echo esc_url( $target_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $this->site_label( (int) $item->target_blog_id ) ); ?></a></td>
 						<td><?php echo esc_html( $item->target_language ); ?></td>
 						<td><?php echo esc_html( (int) $item->duration_ms . 'ms' ); ?></td>
 						<td><?php echo esc_html( $item->result_message ); ?></td>
@@ -856,11 +866,79 @@ class AS_Content_Stream {
 		check_admin_referer( self::NONCE_TEST_TICK );
 
 		if ( ! get_site_option( self::OPTION_PROCESSING_ENABLED, false ) && 0 === $this->get_active_processing_job_count() ) {
-			$this->process_tick( true );
+			$this->process_test_tick();
 		}
 
 		wp_safe_redirect( $this->admin_url( array( 'tab' => 'processing_queue', 'updated' => 1 ) ) );
 		exit;
+	}
+
+	/**
+	 * Process one manual test job only.
+	 *
+	 * @return void
+	 */
+	private function process_test_tick() {
+		self::create_queue_table();
+		self::create_processing_queue_table();
+
+		$started = microtime( true );
+		$source_item = $this->get_next_source_queue_item();
+
+		if ( ! $source_item ) {
+			$this->store_telemetry(
+				array(
+					'phase'        => 'test_idle',
+					'batch_total'  => 0,
+					'batch_done'   => 0,
+					'last_message' => __( 'Test tick found no pending source queue items.', 'as-content-stream' ),
+					'last_batch_duration_ms' => $this->duration_ms( $started ),
+				)
+			);
+			return;
+		}
+
+		$created = $this->explode_source_queue_item( $source_item, 1 );
+		$result = $this->process_processing_jobs( (int) $source_item->id, 1 );
+		$this->restore_test_source_queue_item( $source_item );
+
+		$this->store_telemetry(
+			array(
+				'phase'        => 'test_' . sanitize_key( $source_item->action ),
+				'current_source_id' => (int) $source_item->id,
+				'batch_total'  => (int) $created,
+				'batch_done'   => (int) $result['done'],
+				'last_message' => sprintf(
+					/* translators: 1: processed count, 2: created count. */
+					__( 'Test tick processed %1$d of %2$d sampled processing jobs.', 'as-content-stream' ),
+					(int) $result['done'],
+					(int) $created
+				),
+				'last_batch_duration_ms' => $this->duration_ms( $started ),
+			)
+		);
+	}
+
+	/**
+	 * Keep a manual test tick from consuming the source queue item.
+	 *
+	 * @param object $source_item Source queue row.
+	 * @return void
+	 */
+	private function restore_test_source_queue_item( $source_item ) {
+		global $wpdb;
+
+		if ( 'complete' === $source_item->status ) {
+			return;
+		}
+
+		$wpdb->update(
+			self::queue_table_name(),
+			array( 'status' => sanitize_key( $source_item->status ) ),
+			array( 'id' => (int) $source_item->id ),
+			array( '%s' ),
+			array( '%d' )
+		);
 	}
 
 	/**
@@ -894,13 +972,14 @@ class AS_Content_Stream {
 	 * Explode one source queue row into one processing row per destination site.
 	 *
 	 * @param object $source_item Source queue row.
-	 * @return void
+	 * @param int $limit Optional target limit. Zero means no limit.
+	 * @return int Number of processing jobs created.
 	 */
-	private function explode_source_queue_item( $source_item ) {
+	private function explode_source_queue_item( $source_item, $limit = 0 ) {
 		global $wpdb;
 
 		if ( $this->processing_jobs_exist_for_parent( (int) $source_item->id ) ) {
-			return;
+			return 0;
 		}
 
 		$language_counts = $this->get_language_counts( $this->discover_sites() );
@@ -926,11 +1005,16 @@ class AS_Content_Stream {
 				array( '%s', '%s' ),
 				array( '%d' )
 			);
-			return;
+			return 0;
 		}
 
+		if ( $limit > 0 ) {
+			$targets = array_slice( $targets, 0, $limit );
+		}
+
+		$created = 0;
 		foreach ( $targets as $target ) {
-			$wpdb->insert(
+			$inserted = $wpdb->insert(
 				self::processing_queue_table_name(),
 				array(
 					'created_at'      => current_time( 'mysql', true ),
@@ -946,21 +1030,29 @@ class AS_Content_Stream {
 				),
 				array( '%s', '%d', '%s', '%s', '%d', '%d', '%d', '%s', '%s', '%s' )
 			);
+
+			if ( $inserted ) {
+				$created++;
+			}
 		}
+
+		return $created;
 	}
 
 	/**
 	 * Process pending child jobs for a source item.
 	 *
 	 * @param int $parent_queue_id Parent queue ID.
+	 * @param int $limit Optional job limit. Zero means no limit.
 	 * @return array<string,int>
 	 */
-	private function process_processing_jobs( $parent_queue_id ) {
+	private function process_processing_jobs( $parent_queue_id, $limit = 0 ) {
 		global $wpdb;
 
+		$limit_sql = $limit > 0 ? ' LIMIT ' . absint( $limit ) : '';
 		$jobs = $wpdb->get_results(
 			$wpdb->prepare(
-				'SELECT * FROM ' . self::processing_queue_table_name() . ' WHERE parent_queue_id = %d AND status = %s ORDER BY id ASC',
+				'SELECT * FROM ' . self::processing_queue_table_name() . ' WHERE parent_queue_id = %d AND status = %s ORDER BY id ASC' . $limit_sql,
 				$parent_queue_id,
 				'pending'
 			)
@@ -1354,6 +1446,16 @@ class AS_Content_Stream {
 	}
 
 	/**
+	 * Get an admin URL for a site.
+	 *
+	 * @param int $blog_id Blog ID.
+	 * @return string
+	 */
+	private function site_admin_url( $blog_id ) {
+		return get_admin_url( $blog_id );
+	}
+
+	/**
 	 * Get the original source slug before WordPress trash suffixes are applied.
 	 *
 	 * @param WP_Post $post Post object.
@@ -1593,7 +1695,7 @@ class AS_Content_Stream {
 
 		return (bool) $wpdb->get_var(
 			$wpdb->prepare(
-				'SELECT id FROM ' . self::processing_queue_table_name() . ' WHERE parent_queue_id = %d LIMIT 1',
+				'SELECT id FROM ' . self::processing_queue_table_name() . " WHERE parent_queue_id = %d AND status IN ('pending', 'in_progress') LIMIT 1",
 				$parent_queue_id
 			)
 		);
