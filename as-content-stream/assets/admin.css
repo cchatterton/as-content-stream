@@ -20,6 +20,12 @@
 	margin-top: 0;
 }
 
+.as-content-select {
+	box-sizing: border-box;
+	max-width: 100%;
+	width: 100%;
+}
+
 .as-status {
 	display: inline-block;
 	font-weight: 600;

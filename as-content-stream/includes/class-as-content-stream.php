@@ -329,7 +329,7 @@ class AS_Content_Stream {
 				<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_save_settings' ) ); ?>">
 					<?php wp_nonce_field( self::NONCE_SETTINGS ); ?>
 					<label class="screen-reader-text" for="as-content-target-language"><?php esc_html_e( 'Target language', 'as-content-stream' ); ?></label>
-					<select id="as-content-target-language" class="regular-text" name="target_language">
+					<select id="as-content-target-language" class="as-content-select" name="target_language">
 						<?php if ( empty( $language_counts ) ) : ?>
 							<option value=""><?php esc_html_e( 'No destination languages available', 'as-content-stream' ); ?></option>
 						<?php else : ?>
@@ -349,10 +349,6 @@ class AS_Content_Stream {
 				<p><strong><?php esc_html_e( 'Sites:', 'as-content-stream' ); ?></strong> <?php echo esc_html( count( $sites ) ); ?></p>
 				<p><strong><?php esc_html_e( 'WPML active sites:', 'as-content-stream' ); ?></strong> <?php echo esc_html( count( $wpml_sites ) ); ?></p>
 				<p><strong><?php esc_html_e( 'Pending queue items:', 'as-content-stream' ); ?></strong> <?php echo esc_html( isset( $queue_counts['pending'] ) ? $queue_counts['pending'] : 0 ); ?></p>
-			</div>
-			<div class="as-content-panel">
-				<h2><?php esc_html_e( 'Last Capture', 'as-content-stream' ); ?></h2>
-				<?php $this->render_capture_status(); ?>
 			</div>
 		</div>
 		<?php

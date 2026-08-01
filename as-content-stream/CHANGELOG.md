@@ -2,6 +2,11 @@
 
 All notable changes to AS Content Stream are recorded here.
 
+## 0.1.18 - 2026-08-01
+
+- Fixed target language select overflow in the Settings tile.
+- Removed the Last Capture tile from Settings.
+
 ## 0.1.17 - 2026-08-01
 
 - Removed the Source Site tile from Settings.
