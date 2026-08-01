@@ -88,6 +88,7 @@ class AS_Content_Stream {
 		add_action( 'admin_menu', array( $this, 'register_core_site_menu' ) );
 		add_action( 'admin_post_as_content_stream_save_settings', array( $this, 'save_settings' ) );
 		add_action( 'admin_post_as_content_stream_clear_queue', array( $this, 'clear_queue' ) );
+		add_action( 'admin_post_as_content_stream_run_queue_item', array( $this, 'run_queue_item' ) );
 		add_action( 'admin_post_as_content_stream_clear_log', array( $this, 'clear_log' ) );
 		add_action( 'admin_post_as_content_stream_run_processing_job', array( $this, 'run_processing_job' ) );
 		add_action( 'admin_post_as_content_stream_run_link', array( $this, 'run_link' ) );
@@ -514,26 +515,6 @@ class AS_Content_Stream {
 				</form>
 			</div>
 			<div class="as-content-panel">
-				<h2><?php esc_html_e( 'Processing', 'as-content-stream' ); ?></h2>
-				<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_save_settings' ) ); ?>">
-					<?php wp_nonce_field( self::NONCE_SETTINGS ); ?>
-					<input type="hidden" name="settings_context" value="processing">
-					<input type="hidden" name="target_language" value="<?php echo esc_attr( $target_language ); ?>">
-					<label class="as-content-toggle">
-						<input type="checkbox" name="processing_enabled" value="1" <?php checked( $processing_enabled ); ?>>
-						<span><?php esc_html_e( 'Enable processing cron', 'as-content-stream' ); ?></span>
-					</label>
-					<p class="description"><?php esc_html_e( 'When enabled, cron checks every minute and processes one source queue item at a time.', 'as-content-stream' ); ?></p>
-					<?php submit_button( __( 'Save Processing', 'as-content-stream' ), 'primary', 'submit', false ); ?>
-				</form>
-				<?php if ( ! $processing_enabled ) : ?>
-					<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_test_tick' ) ); ?>" class="as-content-test-form">
-						<?php wp_nonce_field( self::NONCE_TEST_TICK ); ?>
-						<?php submit_button( __( 'Run One Test Tick', 'as-content-stream' ), 'secondary', 'submit', false ); ?>
-					</form>
-				<?php endif; ?>
-			</div>
-			<div class="as-content-panel">
 				<h2><?php esc_html_e( 'Network Status', 'as-content-stream' ); ?></h2>
 				<p><strong><?php esc_html_e( 'Sites:', 'as-content-stream' ); ?></strong> <?php echo esc_html( count( $sites ) ); ?></p>
 				<p><strong><?php esc_html_e( 'WPML active sites:', 'as-content-stream' ); ?></strong> <?php echo esc_html( count( $wpml_sites ) ); ?></p>
@@ -553,15 +534,29 @@ class AS_Content_Stream {
 			<div class="as-content-panel">
 				<h2><?php esc_html_e( 'Heartbeat', 'as-content-stream' ); ?></h2>
 				<div id="as-content-heartbeat" data-nonce="<?php echo esc_attr( wp_create_nonce( self::NONCE_HEARTBEAT ) ); ?>">
-					<p><strong><?php esc_html_e( 'Status:', 'as-content-stream' ); ?></strong> <span data-as-heartbeat="enabled"><?php echo esc_html( $heartbeat['enabled'] ? __( 'On', 'as-content-stream' ) : __( 'Off', 'as-content-stream' ) ); ?></span></p>
+					<p><strong><?php esc_html_e( 'Mode:', 'as-content-stream' ); ?></strong> <span data-as-heartbeat="enabled"><?php echo esc_html( $heartbeat['enabled'] ? __( 'On', 'as-content-stream' ) : __( 'Off / Manual', 'as-content-stream' ) ); ?></span></p>
+					<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_save_settings' ) ); ?>">
+						<?php wp_nonce_field( self::NONCE_SETTINGS ); ?>
+						<input type="hidden" name="settings_context" value="processing">
+						<input type="hidden" name="target_language" value="<?php echo esc_attr( $target_language ); ?>">
+						<label class="as-content-toggle">
+							<input type="checkbox" name="processing_enabled" value="1" <?php checked( $processing_enabled ); ?>>
+							<span><?php esc_html_e( 'Automatic cron processing', 'as-content-stream' ); ?></span>
+						</label>
+						<?php submit_button( __( 'Save Mode', 'as-content-stream' ), 'primary', 'submit', false ); ?>
+					</form>
+					<?php if ( ! $processing_enabled ) : ?>
+						<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_test_tick' ) ); ?>" class="as-content-test-form">
+							<?php wp_nonce_field( self::NONCE_TEST_TICK ); ?>
+							<?php submit_button( __( 'Run One Manual Step', 'as-content-stream' ), 'secondary', 'submit', false ); ?>
+						</form>
+					<?php endif; ?>
 					<p><strong><?php esc_html_e( 'Next check:', 'as-content-stream' ); ?></strong> <span data-as-heartbeat="next_check"><?php echo esc_html( $heartbeat['next_check_seconds'] ); ?></span> <?php esc_html_e( 'seconds', 'as-content-stream' ); ?></p>
-					<p><strong><?php esc_html_e( 'Current phase:', 'as-content-stream' ); ?></strong> <span data-as-heartbeat="phase"><?php echo esc_html( $heartbeat['phase'] ); ?></span></p>
 					<div class="as-content-progress" aria-hidden="true">
 						<span data-as-heartbeat-bar style="width: <?php echo esc_attr( $heartbeat['progress_percent'] ); ?>%;"></span>
 					</div>
-					<p><span data-as-heartbeat="batch_done"><?php echo esc_html( $heartbeat['batch_done'] ); ?></span> / <span data-as-heartbeat="batch_total"><?php echo esc_html( $heartbeat['batch_total'] ); ?></span> <?php esc_html_e( 'items in current batch', 'as-content-stream' ); ?></p>
+					<p><span data-as-heartbeat="batch_done"><?php echo esc_html( $heartbeat['batch_done'] ); ?></span> / <span data-as-heartbeat="batch_total"><?php echo esc_html( $heartbeat['batch_total'] ); ?></span> <?php esc_html_e( 'in Processing Queue', 'as-content-stream' ); ?></p>
 					<p><strong><?php esc_html_e( 'Last batch:', 'as-content-stream' ); ?></strong> <span data-as-heartbeat="last_duration"><?php echo esc_html( $heartbeat['last_batch_duration_ms'] ); ?></span>ms</p>
-					<p class="description" data-as-heartbeat="last_message"><?php echo esc_html( $heartbeat['last_message'] ); ?></p>
 				</div>
 			</div>
 		</div>
@@ -588,13 +583,11 @@ class AS_Content_Stream {
 								return;
 							}
 							var status = response.data;
-							setText('enabled', status.enabled ? 'On' : 'Off');
+							setText('enabled', status.enabled ? 'On' : 'Off / Manual');
 							setText('next_check', status.next_check_seconds);
-							setText('phase', status.phase);
 							setText('batch_done', status.batch_done);
 							setText('batch_total', status.batch_total);
 							setText('last_duration', status.last_batch_duration_ms);
-							setText('last_message', status.last_message);
 							var bar = root.querySelector('[data-as-heartbeat-bar]');
 							if (bar) {
 								bar.style.width = status.progress_percent + '%';
@@ -636,11 +629,12 @@ class AS_Content_Stream {
 					<th><?php esc_html_e( 'Original Post Name', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Post Type', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Inspect', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Control', 'as-content-stream' ); ?></th>
 				</tr>
 			</thead>
 			<tbody>
 				<?php if ( empty( $items ) ) : ?>
-					<tr><td colspan="9"><?php esc_html_e( 'No queue items yet.', 'as-content-stream' ); ?></td></tr>
+					<tr><td colspan="10"><?php esc_html_e( 'No queue items yet.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
 				<?php foreach ( $items as $item ) : ?>
 					<?php $payload = $this->decode_queue_payload( $item->payload ); ?>
@@ -660,6 +654,13 @@ class AS_Content_Stream {
 							<?php else : ?>
 								<?php echo esc_html( '-' ); ?>
 							<?php endif; ?>
+						</td>
+						<td>
+							<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_run_queue_item' ) ); ?>">
+								<?php wp_nonce_field( self::NONCE_QUEUE ); ?>
+								<input type="hidden" name="queue_id" value="<?php echo esc_attr( (int) $item->id ); ?>">
+								<?php submit_button( __( 'Run', 'as-content-stream' ), 'secondary small', 'submit', false ); ?>
+							</form>
 						</td>
 					</tr>
 				<?php endforeach; ?>
@@ -2561,6 +2562,40 @@ class AS_Content_Stream {
 	}
 
 	/**
+	 * Explode one source queue item into processing jobs.
+	 *
+	 * @return void
+	 */
+	public function run_queue_item() {
+		if ( ! is_multisite() || ! is_main_site() || ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You do not have permission to update AS Content Stream.', 'as-content-stream' ) );
+		}
+
+		check_admin_referer( self::NONCE_QUEUE );
+
+		$queue_id = isset( $_POST['queue_id'] ) ? absint( $_POST['queue_id'] ) : 0;
+		if ( $queue_id ) {
+			global $wpdb;
+			self::create_queue_table();
+			self::create_processing_queue_table();
+			$item = $wpdb->get_row(
+				$wpdb->prepare(
+					'SELECT * FROM ' . self::queue_table_name() . ' WHERE id = %d AND status <> %s LIMIT 1',
+					$queue_id,
+					'complete'
+				)
+			);
+
+			if ( $item ) {
+				$this->explode_source_queue_item( $item );
+			}
+		}
+
+		wp_safe_redirect( $this->admin_url( array( 'tab' => 'processing_queue', 'updated' => 1 ) ) );
+		exit;
+	}
+
+	/**
 	 * Clear terminal processing log rows.
 	 *
 	 * @return void
@@ -3337,6 +3372,41 @@ class AS_Content_Stream {
 	}
 
 	/**
+	 * Get processing progress counts for the current batch or active queue.
+	 *
+	 * @param int $parent_queue_id Source queue parent ID.
+	 * @return array<string,int>
+	 */
+	private function get_processing_progress_counts( $parent_queue_id ) {
+		global $wpdb;
+
+		self::create_processing_queue_table();
+
+		if ( $parent_queue_id ) {
+			return array(
+				'total' => (int) $wpdb->get_var(
+					$wpdb->prepare(
+						'SELECT COUNT(*) FROM ' . self::processing_queue_table_name() . ' WHERE parent_queue_id = %d',
+						$parent_queue_id
+					)
+				),
+				'done'  => (int) $wpdb->get_var(
+					$wpdb->prepare(
+						'SELECT COUNT(*) FROM ' . self::processing_queue_table_name() . ' WHERE parent_queue_id = %d AND status = %s',
+						$parent_queue_id,
+						'complete'
+					)
+				),
+			);
+		}
+
+		return array(
+			'total' => (int) $wpdb->get_var( "SELECT COUNT(*) FROM " . self::processing_queue_table_name() . " WHERE status <> 'complete'" ),
+			'done'  => 0,
+		);
+	}
+
+	/**
 	 * Get active processing job count.
 	 *
 	 * @return int
@@ -3439,15 +3509,18 @@ class AS_Content_Stream {
 		$telemetry = get_site_option( self::OPTION_TELEMETRY, array() );
 		$telemetry = is_array( $telemetry ) ? $telemetry : array();
 		$next = wp_next_scheduled( self::CRON_HOOK );
-		$batch_total = isset( $telemetry['batch_total'] ) ? (int) $telemetry['batch_total'] : 0;
-		$batch_done = isset( $telemetry['batch_done'] ) ? (int) $telemetry['batch_done'] : 0;
+		$processing_counts = $this->get_processing_queue_counts();
+		$current_source_id = isset( $telemetry['current_source_id'] ) ? (int) $telemetry['current_source_id'] : 0;
+		$progress_counts = $this->get_processing_progress_counts( $current_source_id );
+		$batch_total = (int) $progress_counts['total'];
+		$batch_done = (int) $progress_counts['done'];
 		$progress = $batch_total > 0 ? min( 100, round( ( $batch_done / $batch_total ) * 100 ) ) : 0;
 
 		return array(
 			'enabled'                => $enabled,
 			'next_check_seconds'     => $enabled && $next ? max( 0, $next - time() ) : 0,
 			'phase'                  => isset( $telemetry['phase'] ) ? sanitize_key( $telemetry['phase'] ) : 'idle',
-			'current_source_id'      => isset( $telemetry['current_source_id'] ) ? (int) $telemetry['current_source_id'] : 0,
+			'current_source_id'      => $current_source_id,
 			'batch_total'            => $batch_total,
 			'batch_done'             => $batch_done,
 			'batch_remaining'        => max( 0, $batch_total - $batch_done ),
@@ -3455,7 +3528,7 @@ class AS_Content_Stream {
 			'last_batch_duration_ms' => isset( $telemetry['last_batch_duration_ms'] ) ? (int) $telemetry['last_batch_duration_ms'] : 0,
 			'last_message'           => isset( $telemetry['last_message'] ) ? (string) $telemetry['last_message'] : __( 'No processing runs yet.', 'as-content-stream' ),
 			'queue_counts'           => $this->get_queue_counts(),
-			'processing_counts'      => $this->get_processing_queue_counts(),
+			'processing_counts'      => $processing_counts,
 		);
 	}
 

@@ -2,6 +2,14 @@
 
 All notable changes to AS Content Stream are recorded here.
 
+## 0.1.27 - 2026-08-01
+
+- Added Run controls to Create, Update, and Delete Queue rows to explode a source queue item into Processing Queue.
+- Removed the standalone Processing settings tile.
+- Moved automatic/manual mode controls into the Heartbeat tile.
+- Simplified Heartbeat display by removing current phase and last-message progress copy.
+- Renamed batch progress to show items in Processing Queue.
+
 ## 0.1.26 - 2026-08-01
 
 - Added processing queue job IDs, blocked-by IDs, and priority ordering.
