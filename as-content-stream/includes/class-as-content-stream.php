@@ -10,7 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
- * AS Content Stream bootstrap, admin UI, site discovery, and queue capture.
+ * Content Stream bootstrap, admin UI, site discovery, and queue capture.
  */
 class AS_Content_Stream {
 	const OPTION_TARGET_LANGUAGE = 'as_content_stream_target_language';
@@ -278,7 +278,7 @@ class AS_Content_Stream {
 		}
 
 		add_menu_page(
-			__( 'AS Content Stream', 'as-content-stream' ),
+			__( 'Content Stream', 'as-content-stream' ),
 			__( 'Content Stream', 'as-content-stream' ),
 			'manage_options',
 			self::PAGE_SLUG,
@@ -314,11 +314,11 @@ class AS_Content_Stream {
 	 */
 	public function render_admin_page() {
 		if ( ! is_multisite() || ! is_main_site() ) {
-			wp_die( esc_html__( 'AS Content Stream is only available in the core site admin.', 'as-content-stream' ) );
+			wp_die( esc_html__( 'Content Stream is only available in the core site admin.', 'as-content-stream' ) );
 		}
 
 		if ( ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'You do not have permission to manage AS Content Stream.', 'as-content-stream' ) );
+			wp_die( esc_html__( 'You do not have permission to manage Content Stream.', 'as-content-stream' ) );
 		}
 
 		self::create_queue_table();
@@ -341,8 +341,8 @@ class AS_Content_Stream {
 
 		?>
 		<div class="wrap as-content-stream">
-			<h1><?php esc_html_e( 'AS Content Stream', 'as-content-stream' ); ?></h1>
-			<nav class="nav-tab-wrapper" aria-label="<?php esc_attr_e( 'AS Content Stream tabs', 'as-content-stream' ); ?>">
+			<h1><?php esc_html_e( 'Content Stream', 'as-content-stream' ); ?></h1>
+			<nav class="nav-tab-wrapper" aria-label="<?php esc_attr_e( 'Content Stream tabs', 'as-content-stream' ); ?>">
 				<?php foreach ( $tabs as $tab_key => $tab_label ) : ?>
 					<a class="nav-tab <?php echo esc_attr( $active_tab === $tab_key ? 'nav-tab-active' : '' ); ?>" href="<?php echo esc_url( $this->admin_url( array( 'tab' => $tab_key ) ) ); ?>">
 						<?php echo esc_html( $tab_label ); ?>
@@ -748,6 +748,7 @@ class AS_Content_Stream {
 					<th><?php esc_html_e( 'Action', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Status', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Source', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Post Type', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Destination', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Language', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Duration', 'as-content-stream' ); ?></th>
@@ -756,7 +757,7 @@ class AS_Content_Stream {
 			</thead>
 			<tbody>
 				<?php if ( empty( $items ) ) : ?>
-					<tr><td colspan="9"><?php esc_html_e( 'No completed processing jobs yet.', 'as-content-stream' ); ?></td></tr>
+					<tr><td colspan="10"><?php esc_html_e( 'No completed processing jobs yet.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
 				<?php foreach ( $items as $item ) : ?>
 					<?php
@@ -771,7 +772,8 @@ class AS_Content_Stream {
 						<td><?php echo esc_html( '#' . (int) $item->parent_queue_id ); ?></td>
 						<td><?php echo esc_html( ucfirst( $item->action ) ); ?></td>
 						<td><?php echo esc_html( ucfirst( $item->status ) ); ?></td>
-						<td><a href="<?php echo esc_url( $source_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $this->site_label( (int) $item->source_blog_id ) . ' #' . (int) $item->source_post_id ); ?></a></td>
+						<td><a href="<?php echo esc_url( $source_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( '#' . (int) $item->source_post_id ); ?></a></td>
+						<td><?php echo esc_html( sanitize_key( $item->post_type ) ); ?></td>
 						<td><a href="<?php echo esc_url( $target_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $this->site_label( (int) $item->target_blog_id ) ); ?></a></td>
 						<td><?php echo esc_html( $item->target_language ); ?></td>
 						<td><?php echo esc_html( (int) $item->duration_ms . 'ms' ); ?></td>
@@ -810,17 +812,18 @@ class AS_Content_Stream {
 				<tr>
 					<th><?php esc_html_e( 'Link', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Source', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Run', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Post Type', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Destination', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Language', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Status', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Last Action', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Last Streamed', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Run', 'as-content-stream' ); ?></th>
 				</tr>
 			</thead>
 			<tbody>
 				<?php if ( empty( $links ) ) : ?>
-					<tr><td colspan="8"><?php esc_html_e( 'No source/destination links found.', 'as-content-stream' ); ?></td></tr>
+					<tr><td colspan="9"><?php esc_html_e( 'No source/destination links found.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
 				<?php foreach ( $links as $link ) : ?>
 					<?php
@@ -829,7 +832,13 @@ class AS_Content_Stream {
 					?>
 					<tr>
 						<td><?php echo esc_html( '#' . (int) $link->id ); ?></td>
-						<td><a href="<?php echo esc_url( $source_url ? $source_url : $this->site_admin_url( (int) $link->source_blog_id ) ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $this->site_label( (int) $link->source_blog_id ) . ' #' . (int) $link->source_post_id ); ?></a></td>
+						<td><a href="<?php echo esc_url( $source_url ? $source_url : $this->site_admin_url( (int) $link->source_blog_id ) ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( '#' . (int) $link->source_post_id ); ?></a></td>
+						<td><?php echo esc_html( sanitize_key( $link->source_post_type ) ); ?></td>
+						<td><a href="<?php echo esc_url( $target_url ? $target_url : $this->site_admin_url( (int) $link->target_blog_id ) ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $this->site_label( (int) $link->target_blog_id ) . ' #' . (int) $link->target_post_id ); ?></a></td>
+						<td><?php echo esc_html( $link->target_language ); ?></td>
+						<td><?php echo esc_html( ucfirst( $link->status ) ); ?></td>
+						<td><?php echo esc_html( ucfirst( $link->last_action ) ); ?></td>
+						<td><?php echo esc_html( $link->last_streamed_at ? $link->last_streamed_at : '-' ); ?></td>
 						<td>
 							<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_run_link' ) ); ?>">
 								<?php wp_nonce_field( self::NONCE_PROCESSING ); ?>
@@ -837,11 +846,6 @@ class AS_Content_Stream {
 								<?php submit_button( __( 'Run', 'as-content-stream' ), 'secondary small', 'submit', false ); ?>
 							</form>
 						</td>
-						<td><a href="<?php echo esc_url( $target_url ? $target_url : $this->site_admin_url( (int) $link->target_blog_id ) ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $this->site_label( (int) $link->target_blog_id ) . ' #' . (int) $link->target_post_id ); ?></a></td>
-						<td><?php echo esc_html( $link->target_language ); ?></td>
-						<td><?php echo esc_html( ucfirst( $link->status ) ); ?></td>
-						<td><?php echo esc_html( ucfirst( $link->last_action ) ); ?></td>
-						<td><?php echo esc_html( $link->last_streamed_at ? $link->last_streamed_at : '-' ); ?></td>
 					</tr>
 				<?php endforeach; ?>
 			</tbody>
@@ -856,7 +860,7 @@ class AS_Content_Stream {
 	 */
 	public function save_settings() {
 		if ( ! is_multisite() || ! is_main_site() || ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'You do not have permission to update AS Content Stream.', 'as-content-stream' ) );
+			wp_die( esc_html__( 'You do not have permission to update Content Stream.', 'as-content-stream' ) );
 		}
 
 		check_admin_referer( self::NONCE_SETTINGS );
@@ -1004,7 +1008,7 @@ class AS_Content_Stream {
 	 */
 	public function run_test_tick() {
 		if ( ! is_multisite() || ! is_main_site() || ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'You do not have permission to run AS Content Stream processing.', 'as-content-stream' ) );
+			wp_die( esc_html__( 'You do not have permission to run Content Stream processing.', 'as-content-stream' ) );
 		}
 
 		check_admin_referer( self::NONCE_TEST_TICK );
@@ -1523,6 +1527,7 @@ class AS_Content_Stream {
 
 		unset( $source_row['ID'] );
 		$source_row['post_author'] = $author_id;
+		$source_row['post_status'] = 'draft';
 		$source_row['guid'] = '';
 		$source_row['post_parent'] = 0;
 
@@ -1534,7 +1539,6 @@ class AS_Content_Stream {
 			return false === $updated ? 0 : $existing_id;
 		}
 
-		$source_row['post_status'] = 'draft';
 		$inserted = $wpdb->insert( $target_table, $source_row );
 		if ( ! $inserted ) {
 			return 0;
@@ -2555,7 +2559,7 @@ class AS_Content_Stream {
 	 */
 	public function clear_queue() {
 		if ( ! is_multisite() || ! is_main_site() || ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'You do not have permission to update AS Content Stream.', 'as-content-stream' ) );
+			wp_die( esc_html__( 'You do not have permission to update Content Stream.', 'as-content-stream' ) );
 		}
 
 		check_admin_referer( self::NONCE_QUEUE );
@@ -2574,7 +2578,7 @@ class AS_Content_Stream {
 	 */
 	public function run_queue_item() {
 		if ( ! is_multisite() || ! is_main_site() || ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'You do not have permission to update AS Content Stream.', 'as-content-stream' ) );
+			wp_die( esc_html__( 'You do not have permission to update Content Stream.', 'as-content-stream' ) );
 		}
 
 		check_admin_referer( self::NONCE_QUEUE );
@@ -2608,7 +2612,7 @@ class AS_Content_Stream {
 	 */
 	public function clear_log() {
 		if ( ! is_multisite() || ! is_main_site() || ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'You do not have permission to update AS Content Stream.', 'as-content-stream' ) );
+			wp_die( esc_html__( 'You do not have permission to update Content Stream.', 'as-content-stream' ) );
 		}
 
 		check_admin_referer( self::NONCE_LOG );
@@ -2628,7 +2632,7 @@ class AS_Content_Stream {
 	 */
 	public function run_processing_job() {
 		if ( ! is_multisite() || ! is_main_site() || ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'You do not have permission to update AS Content Stream.', 'as-content-stream' ) );
+			wp_die( esc_html__( 'You do not have permission to update Content Stream.', 'as-content-stream' ) );
 		}
 
 		check_admin_referer( self::NONCE_PROCESSING );
@@ -2664,7 +2668,7 @@ class AS_Content_Stream {
 	 */
 	public function delete_processing_job() {
 		if ( ! is_multisite() || ! is_main_site() || ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'You do not have permission to update AS Content Stream.', 'as-content-stream' ) );
+			wp_die( esc_html__( 'You do not have permission to update Content Stream.', 'as-content-stream' ) );
 		}
 
 		check_admin_referer( self::NONCE_PROCESSING );
@@ -2708,7 +2712,7 @@ class AS_Content_Stream {
 	 */
 	public function run_link() {
 		if ( ! is_multisite() || ! is_main_site() || ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'You do not have permission to update AS Content Stream.', 'as-content-stream' ) );
+			wp_die( esc_html__( 'You do not have permission to update Content Stream.', 'as-content-stream' ) );
 		}
 
 		check_admin_referer( self::NONCE_PROCESSING );
@@ -3867,8 +3871,8 @@ class AS_Content_Stream {
 				'user_login'   => self::STREAM_AUTHOR_LOGIN,
 				'user_pass'    => wp_generate_password( 64, true, true ),
 				'user_email'   => self::STREAM_AUTHOR_EMAIL,
-				'display_name' => __( 'AS Content Stream', 'as-content-stream' ),
-				'nickname'     => __( 'AS Content Stream', 'as-content-stream' ),
+				'display_name' => __( 'Content Stream', 'as-content-stream' ),
+				'nickname'     => __( 'Content Stream', 'as-content-stream' ),
 				'description'  => __( 'System author for streamed content.', 'as-content-stream' ),
 				'role'         => '',
 			)
@@ -3930,7 +3934,7 @@ class AS_Content_Stream {
 		unset( $password );
 
 		if ( self::STREAM_AUTHOR_LOGIN === sanitize_user( $username, true ) ) {
-			return new WP_Error( 'as_content_stream_author_login_blocked', __( 'The AS Content Stream system author cannot log in.', 'as-content-stream' ) );
+			return new WP_Error( 'as_content_stream_author_login_blocked', __( 'The Content Stream system author cannot log in.', 'as-content-stream' ) );
 		}
 
 		return $user;

@@ -1,6 +1,14 @@
 # Changelog
 
-All notable changes to AS Content Stream are recorded here.
+All notable changes to Content Stream are recorded here.
+
+## 0.1.32 - 2026-08-01
+
+- Renamed visible admin references to Content Stream.
+- Forced destination post status to draft on both streamed creates and updates.
+- Added Post Type to Log and Links tables.
+- Moved Links Run controls to the rightmost column and aligned related table column order.
+- Removed the visible border around the Processing Queue trash icon.
 
 ## 0.1.31 - 2026-08-01
 
@@ -180,7 +188,7 @@ All notable changes to AS Content Stream are recorded here.
 
 ## 0.1.2 - 2026-07-23
 
-- Moved the core site control page to a top-level AS Content Stream admin menu.
+- Moved the core site control page to a top-level Content Stream admin menu.
 - Limited content change queue capture to the core source site.
 
 ## 0.1.1 - 2026-07-23
