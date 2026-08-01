@@ -1228,6 +1228,11 @@ class AS_Content_Stream {
 	 */
 	private function process_processing_job( $job ) {
 		$action = sanitize_key( $job->action );
+		$post_type = sanitize_key( $job->post_type );
+
+		if ( ! $this->is_streamable_post_type( $post_type ) ) {
+			return $this->processing_result( 'complete', __( 'Non-streamable post type ignored.', 'as-content-stream' ) );
+		}
 
 		if ( 'delete' === $action ) {
 			return $this->process_delete_job( $job );
@@ -1606,7 +1611,7 @@ class AS_Content_Stream {
 			return $value;
 		}
 
-		if ( is_numeric( $value ) && (int) $value > 0 && $this->source_post_exists( $source_blog_id, (int) $value, false ) ) {
+		if ( is_numeric( $value ) && (int) $value > 0 && $this->source_post_exists( $source_blog_id, (int) $value, false, true ) ) {
 			$source_uuid = $this->get_or_create_source_uuid( $source_blog_id, (int) $value );
 			$link = $this->get_link_for_source_target( $source_uuid, $target_blog_id, $target_language );
 			if ( $link && ! empty( $link->target_post_id ) ) {
@@ -2076,7 +2081,7 @@ class AS_Content_Stream {
 			}
 
 			foreach ( $this->extract_possible_post_ids( $row['meta_value'] ) as $possible_id ) {
-				if ( $this->source_post_exists( $blog_id, $possible_id, false ) ) {
+				if ( $this->source_post_exists( $blog_id, $possible_id, false, true ) ) {
 					$dependencies[] = $possible_id;
 				}
 			}
@@ -2117,9 +2122,10 @@ class AS_Content_Stream {
 	 * @param int  $blog_id Blog ID.
 	 * @param int  $post_id Post ID.
 	 * @param bool $allow_attachment Whether attachments count.
+	 * @param bool $require_streamable Whether internal structural post types should be ignored.
 	 * @return bool
 	 */
-	private function source_post_exists( $blog_id, $post_id, $allow_attachment = true ) {
+	private function source_post_exists( $blog_id, $post_id, $allow_attachment = true, $require_streamable = false ) {
 		$restore = get_current_blog_id() !== $blog_id;
 		if ( $restore ) {
 			switch_to_blog( $blog_id );
@@ -2127,6 +2133,9 @@ class AS_Content_Stream {
 
 		$post = get_post( $post_id );
 		$exists = $post instanceof WP_Post && ( $allow_attachment || 'attachment' !== $post->post_type );
+		if ( $exists && $require_streamable ) {
+			$exists = $this->is_streamable_post_type( $post->post_type );
+		}
 
 		if ( $restore ) {
 			restore_current_blog();
@@ -2149,7 +2158,7 @@ class AS_Content_Stream {
 		self::create_processing_queue_table();
 
 		$post_type = $this->get_post_type_from_site( (int) $blocked_job->source_blog_id, $source_post_id );
-		if ( '' === $post_type || 'attachment' === $post_type ) {
+		if ( '' === $post_type || ! $this->is_streamable_post_type( $post_type ) ) {
 			return 0;
 		}
 
@@ -2835,6 +2844,10 @@ class AS_Content_Stream {
 			return;
 		}
 
+		if ( ! $this->is_streamable_post_type( $post->post_type ) ) {
+			return;
+		}
+
 		$action = ( $update && $post_before instanceof WP_Post && 'auto-draft' !== $post_before->post_status ) ? 'update' : 'create';
 		$this->enqueue_source_action( $action, get_current_blog_id(), $post_id, $post->post_type, $post );
 	}
@@ -2856,6 +2869,10 @@ class AS_Content_Stream {
 			return;
 		}
 
+		if ( ! $this->is_streamable_post_type( $post->post_type ) ) {
+			return;
+		}
+
 		$this->enqueue_source_action( 'delete', get_current_blog_id(), $post_id, $post->post_type, $post );
 	}
 
@@ -2868,6 +2885,10 @@ class AS_Content_Stream {
 	 */
 	public function capture_delete_post( $post_id, $post ) {
 		if ( ! $this->is_source_site() || ! $post instanceof WP_Post || $this->is_revision_or_autosave( $post_id, $post ) ) {
+			return;
+		}
+
+		if ( ! $this->is_streamable_post_type( $post->post_type ) ) {
 			return;
 		}
 
@@ -3049,6 +3070,34 @@ class AS_Content_Stream {
 	 */
 	private function is_revision_or_autosave( $post_id, $post ) {
 		return 'revision' === $post->post_type || wp_is_post_revision( $post_id ) || wp_is_post_autosave( $post_id );
+	}
+
+	/**
+	 * Determine whether a post type should be streamed as source content.
+	 *
+	 * @param string $post_type Post type.
+	 * @return bool
+	 */
+	private function is_streamable_post_type( $post_type ) {
+		$post_type = sanitize_key( $post_type );
+		$excluded = array(
+			'attachment',
+			'custom_css',
+			'customize_changeset',
+			'nav_menu_item',
+			'oembed_cache',
+			'revision',
+			'user_request',
+			'wp_block',
+			'wp_font_face',
+			'wp_font_family',
+			'wp_global_styles',
+			'wp_navigation',
+			'wp_template',
+			'wp_template_part',
+		);
+
+		return '' !== $post_type && ! in_array( $post_type, $excluded, true );
 	}
 
 	/**

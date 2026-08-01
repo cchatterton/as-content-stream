@@ -2,6 +2,12 @@
 
 All notable changes to AS Content Stream are recorded here.
 
+## 0.1.30 - 2026-08-01
+
+- Excluded WordPress structural post types, including `wp_navigation`, from source capture and dependency blockers.
+- Ignored non-streamable processing jobs as no-op complete so older accidental blockers can unblock downstream jobs.
+- Limited meta relationship dependency detection and ID rewriting to streamable source post types.
+
 ## 0.1.29 - 2026-08-01
 
 - Added a Post Type column to the Processing Queue.
