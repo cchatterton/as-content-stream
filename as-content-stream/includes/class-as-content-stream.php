@@ -66,9 +66,32 @@ class AS_Content_Stream {
 		self::create_queue_table();
 		self::create_processing_queue_table();
 		self::create_links_table();
+		self::run_activation_discovery();
 
 		if ( get_site_option( self::OPTION_PROCESSING_ENABLED, false ) ) {
 			self::schedule_cron();
+		}
+	}
+
+	/**
+	 * Seed Discovery once on activation.
+	 *
+	 * @return void
+	 */
+	private static function run_activation_discovery() {
+		if ( ! is_multisite() ) {
+			return;
+		}
+
+		$restore = get_current_blog_id() !== get_main_site_id();
+		if ( $restore ) {
+			switch_to_blog( get_main_site_id() );
+		}
+
+		self::instance()->refresh_discovery_queue();
+
+		if ( $restore ) {
+			restore_current_blog();
 		}
 	}
 

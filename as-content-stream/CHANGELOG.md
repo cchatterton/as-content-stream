@@ -2,6 +2,11 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.38 - 2026-08-01
+
+- Seeded Discovery once during plugin activation from the core site.
+- Confirmed Discovery rebuilds only run on activation or manual Re-run Discovery clicks.
+
 ## 0.1.37 - 2026-08-01
 
 - Removed automatic Discovery rebuilds from normal Content Stream admin page loads to keep tab clicks fast.
