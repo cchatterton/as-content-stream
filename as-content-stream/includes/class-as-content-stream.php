@@ -163,6 +163,8 @@ class AS_Content_Stream {
 			completed_at datetime NULL,
 			parent_queue_id bigint(20) unsigned NOT NULL,
 			link_id bigint(20) unsigned NOT NULL DEFAULT 0,
+			blocked_by bigint(20) unsigned NOT NULL DEFAULT 0,
+			priority int(11) NOT NULL DEFAULT 0,
 			action varchar(20) NOT NULL,
 			status varchar(20) NOT NULL DEFAULT 'pending',
 			source_blog_id bigint(20) unsigned NOT NULL,
@@ -176,6 +178,8 @@ class AS_Content_Stream {
 			duration_ms bigint(20) unsigned NOT NULL DEFAULT 0,
 			PRIMARY KEY  (id),
 			KEY link_id (link_id),
+			KEY blocked_by (blocked_by),
+			KEY priority_status (priority, status),
 			KEY parent_status (parent_queue_id, status),
 			KEY status (status),
 			KEY action_status (action, status),
@@ -675,8 +679,10 @@ class AS_Content_Stream {
 		<table class="widefat striped as-content-queue">
 			<thead>
 				<tr>
+					<th><?php esc_html_e( 'Job', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Created', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Parent', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Blocked By', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Action', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Status', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Source', 'as-content-stream' ); ?></th>
@@ -690,7 +696,7 @@ class AS_Content_Stream {
 			</thead>
 			<tbody>
 				<?php if ( empty( $items ) ) : ?>
-					<tr><td colspan="11"><?php esc_html_e( 'No processing jobs yet.', 'as-content-stream' ); ?></td></tr>
+					<tr><td colspan="13"><?php esc_html_e( 'No processing jobs yet.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
 				<?php foreach ( $items as $item ) : ?>
 					<?php
@@ -701,8 +707,10 @@ class AS_Content_Stream {
 					$target_url = $target_url ? $target_url : $this->site_admin_url( (int) $item->target_blog_id );
 					?>
 					<tr>
+						<td><?php echo esc_html( '#' . (int) $item->id ); ?></td>
 						<td><?php echo esc_html( $item->created_at ); ?></td>
 						<td><?php echo esc_html( '#' . (int) $item->parent_queue_id ); ?></td>
+						<td><?php echo esc_html( ! empty( $item->blocked_by ) ? '#' . (int) $item->blocked_by : '-' ); ?></td>
 						<td><?php echo esc_html( ucfirst( $item->action ) ); ?></td>
 						<td><?php echo esc_html( ucfirst( $item->status ) ); ?></td>
 						<td><a href="<?php echo esc_url( $source_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $this->site_label( (int) $item->source_blog_id ) . ' #' . (int) $item->source_post_id ); ?></a></td>
@@ -1141,7 +1149,7 @@ class AS_Content_Stream {
 		$limit_sql = $limit > 0 ? ' LIMIT ' . absint( $limit ) : '';
 		$jobs = $wpdb->get_results(
 			$wpdb->prepare(
-				'SELECT * FROM ' . self::processing_queue_table_name() . ' WHERE parent_queue_id = %d AND status = %s ORDER BY id ASC' . $limit_sql,
+				'SELECT * FROM ' . self::processing_queue_table_name() . ' WHERE parent_queue_id = %d AND status = %s AND blocked_by = 0 ORDER BY priority DESC, id ASC' . $limit_sql,
 				$parent_queue_id,
 				'pending'
 			)
@@ -1175,6 +1183,24 @@ class AS_Content_Stream {
 	private function process_processing_job_row( $job ) {
 		global $wpdb;
 
+		if ( ! empty( $job->blocked_by ) && ! $this->processing_job_is_complete( (int) $job->blocked_by ) ) {
+			$wpdb->update(
+				self::processing_queue_table_name(),
+				array(
+					'status'         => 'blocked',
+					'result_message' => sprintf(
+						/* translators: %d: blocking job ID. */
+						__( 'Waiting for blocking job #%d.', 'as-content-stream' ),
+						(int) $job->blocked_by
+					),
+				),
+				array( 'id' => (int) $job->id ),
+				array( '%s', '%s' ),
+				array( '%d' )
+			);
+			return false;
+		}
+
 		$started = microtime( true );
 		$wpdb->update(
 			self::processing_queue_table_name(),
@@ -1189,11 +1215,12 @@ class AS_Content_Stream {
 		);
 
 		$result = $this->process_processing_job( $job );
+		$completed_at = in_array( $result['status'], array( 'complete', 'failed', 'skipped' ), true ) ? current_time( 'mysql', true ) : null;
 		$updated = $wpdb->update(
 			self::processing_queue_table_name(),
 			array(
 				'status'         => $result['status'],
-				'completed_at'   => current_time( 'mysql', true ),
+				'completed_at'   => $completed_at,
 				'duration_ms'    => $this->duration_ms( $started ),
 				'result_message' => $result['message'],
 			),
@@ -1201,6 +1228,10 @@ class AS_Content_Stream {
 			array( '%s', '%s', '%d', '%s' ),
 			array( '%d' )
 		);
+
+		if ( false !== $updated && 'complete' === $result['status'] ) {
+			$this->unblock_processing_jobs_waiting_on( (int) $job->id );
+		}
 
 		return false !== $updated;
 	}
@@ -1268,7 +1299,7 @@ class AS_Content_Stream {
 			return $this->processing_result( 'skipped', __( 'Destination exists in trash; skipped.', 'as-content-stream' ) );
 		}
 
-		if ( $existing_id && 'create' === sanitize_key( $job->action ) ) {
+		if ( $existing_id && 'create' === sanitize_key( $job->action ) && $this->get_link_for_source_target( $source_uuid, (int) $job->target_blog_id, sanitize_key( $job->target_language ) ) ) {
 			if ( $restore ) {
 				restore_current_blog();
 			}
@@ -1277,7 +1308,16 @@ class AS_Content_Stream {
 
 		$result_id = $this->copy_source_post_sql_to_destination( $job, (int) $author_id, (int) $existing_id );
 		if ( $result_id ) {
+			$dependency = $this->ensure_meta_dependencies_for_job( $job );
+			if ( $dependency ) {
+				return $dependency;
+			}
+
 			$this->copy_source_postmeta_sql_to_destination( $job, (int) $result_id );
+			$featured_result = $this->copy_featured_image_for_job( $job, (int) $result_id );
+			if ( 'failed' === $featured_result['status'] || 'blocked' === $featured_result['status'] ) {
+				return $featured_result;
+			}
 		}
 
 		if ( $result_id && $existing_id ) {
@@ -1525,16 +1565,666 @@ class AS_Content_Stream {
 
 		$wpdb->delete( $target_table, array( 'post_id' => $destination_post_id ), array( '%d' ) );
 		foreach ( (array) $rows as $row ) {
+			if ( '_thumbnail_id' === $row['meta_key'] ) {
+				continue;
+			}
+
+			$meta_value = $this->translate_meta_post_ids( $row['meta_value'], (int) $job->source_blog_id, (int) $job->target_blog_id, sanitize_key( $job->target_language ) );
 			$wpdb->insert(
 				$target_table,
 				array(
 					'post_id'    => $destination_post_id,
+					'meta_key'   => $row['meta_key'],
+					'meta_value' => $meta_value,
+				),
+				array( '%d', '%s', '%s' )
+			);
+		}
+	}
+
+	/**
+	 * Translate source post IDs in a meta value to destination post IDs.
+	 *
+	 * @param mixed  $value Meta value.
+	 * @param int    $source_blog_id Source blog ID.
+	 * @param int    $target_blog_id Target blog ID.
+	 * @param string $target_language Target language.
+	 * @return mixed
+	 */
+	private function translate_meta_post_ids( $value, $source_blog_id, $target_blog_id, $target_language ) {
+		$serialized = is_string( $value ) && is_serialized( $value );
+		$decoded = $serialized ? maybe_unserialize( $value ) : $value;
+		$translated = $this->translate_meta_post_ids_recursive( $decoded, $source_blog_id, $target_blog_id, $target_language );
+
+		return $serialized ? maybe_serialize( $translated ) : $translated;
+	}
+
+	/**
+	 * Translate source post IDs recursively.
+	 *
+	 * @param mixed  $value Meta value.
+	 * @param int    $source_blog_id Source blog ID.
+	 * @param int    $target_blog_id Target blog ID.
+	 * @param string $target_language Target language.
+	 * @return mixed
+	 */
+	private function translate_meta_post_ids_recursive( $value, $source_blog_id, $target_blog_id, $target_language ) {
+		if ( is_array( $value ) ) {
+			foreach ( $value as $key => $item ) {
+				$value[ $key ] = $this->translate_meta_post_ids_recursive( $item, $source_blog_id, $target_blog_id, $target_language );
+			}
+			return $value;
+		}
+
+		if ( is_numeric( $value ) && (int) $value > 0 && $this->source_post_exists( $source_blog_id, (int) $value, false ) ) {
+			$source_uuid = $this->get_or_create_source_uuid( $source_blog_id, (int) $value );
+			$link = $this->get_link_for_source_target( $source_uuid, $target_blog_id, $target_language );
+			if ( $link && ! empty( $link->target_post_id ) ) {
+				return is_string( $value ) ? (string) (int) $link->target_post_id : (int) $link->target_post_id;
+			}
+		}
+
+		return $value;
+	}
+
+	/**
+	 * Copy a featured image attachment and assign it on the destination post.
+	 *
+	 * @param object $job Processing job.
+	 * @param int    $destination_post_id Destination post ID.
+	 * @return array<string,string>
+	 */
+	private function copy_featured_image_for_job( $job, $destination_post_id ) {
+		$source_attachment_id = $this->get_source_featured_image_id( (int) $job->source_blog_id, (int) $job->source_post_id );
+		if ( ! $source_attachment_id ) {
+			return $this->processing_result( 'complete', __( 'No featured image to copy.', 'as-content-stream' ) );
+		}
+
+		$source_uuid = $this->get_or_create_source_uuid( (int) $job->source_blog_id, $source_attachment_id );
+		$link = $this->get_link_for_source_target( $source_uuid, (int) $job->target_blog_id, sanitize_key( $job->target_language ) );
+		$destination_attachment_id = $link && ! empty( $link->target_post_id ) ? (int) $link->target_post_id : 0;
+		$destination_attachment_id = $this->copy_attachment_sql_to_destination( (int) $job->source_blog_id, $source_attachment_id, (int) $job->target_blog_id, $destination_attachment_id, sanitize_key( $job->target_language ), $source_uuid );
+
+		if ( ! $destination_attachment_id ) {
+			return $this->processing_result( 'failed', __( 'Unable to copy featured image attachment.', 'as-content-stream' ) );
+		}
+
+		$this->replace_postmeta_sql( (int) $job->target_blog_id, $destination_post_id, '_thumbnail_id', $destination_attachment_id );
+
+		return $this->processing_result( 'complete', sprintf( __( 'Featured image copied. #%d', 'as-content-stream' ), $destination_attachment_id ) );
+	}
+
+	/**
+	 * Get source featured image ID.
+	 *
+	 * @param int $blog_id Source blog ID.
+	 * @param int $post_id Source post ID.
+	 * @return int
+	 */
+	private function get_source_featured_image_id( $blog_id, $post_id ) {
+		$restore = get_current_blog_id() !== $blog_id;
+		if ( $restore ) {
+			switch_to_blog( $blog_id );
+		}
+
+		$thumbnail_id = (int) get_post_thumbnail_id( $post_id );
+
+		if ( $restore ) {
+			restore_current_blog();
+		}
+
+		return $thumbnail_id;
+	}
+
+	/**
+	 * Copy an attachment row, file, and meta into the destination site.
+	 *
+	 * @param int    $source_blog_id Source blog ID.
+	 * @param int    $source_attachment_id Source attachment ID.
+	 * @param int    $target_blog_id Target blog ID.
+	 * @param int    $existing_attachment_id Existing destination attachment ID.
+	 * @param string $target_language Target language.
+	 * @param string $source_uuid Source attachment UUID.
+	 * @return int
+	 */
+	private function copy_attachment_sql_to_destination( $source_blog_id, $source_attachment_id, $target_blog_id, $existing_attachment_id, $target_language, $source_uuid ) {
+		global $wpdb;
+
+		$source_file = $this->get_attached_file_from_site( $source_blog_id, $source_attachment_id );
+		if ( '' === $source_file || ! file_exists( $source_file ) ) {
+			return 0;
+		}
+
+		$destination_file = $this->copy_file_to_uploads( $source_file, $target_blog_id );
+		if ( '' === $destination_file ) {
+			return 0;
+		}
+
+		$source_table = $wpdb->get_blog_prefix( $source_blog_id ) . 'posts';
+		$target_table = $wpdb->get_blog_prefix( $target_blog_id ) . 'posts';
+		$source_row = $wpdb->get_row(
+			$wpdb->prepare(
+				"SELECT * FROM {$source_table} WHERE ID = %d LIMIT 1",
+				$source_attachment_id
+			),
+			ARRAY_A
+		);
+
+		if ( empty( $source_row ) ) {
+			return 0;
+		}
+
+		$destination_url = $this->upload_url_for_file( $target_blog_id, $destination_file );
+		unset( $source_row['ID'] );
+		$author_id = $this->ensure_stream_author_user();
+		if ( is_wp_error( $author_id ) ) {
+			return 0;
+		}
+
+		$source_row['post_author'] = (int) $author_id;
+		$source_row['post_parent'] = 0;
+		$source_row['guid'] = $destination_url;
+		$source_row['post_status'] = 'inherit';
+
+		if ( $existing_attachment_id ) {
+			$source_row['ID'] = $existing_attachment_id;
+			$written = $wpdb->replace( $target_table, $source_row );
+			$destination_attachment_id = false === $written ? 0 : $existing_attachment_id;
+		} else {
+			$written = $wpdb->insert( $target_table, $source_row );
+			$destination_attachment_id = $written ? (int) $wpdb->insert_id : 0;
+		}
+
+		if ( ! $destination_attachment_id ) {
+			return 0;
+		}
+
+		$this->copy_source_postmeta_sql_to_destination_for_posts( $source_blog_id, $source_attachment_id, $target_blog_id, $destination_attachment_id );
+		$this->copy_attachment_derivative_files( $source_blog_id, $source_attachment_id, $target_blog_id, $source_file, $destination_file );
+		$this->replace_postmeta_sql( $target_blog_id, $destination_attachment_id, '_wp_attached_file', $this->relative_upload_path( $target_blog_id, $destination_file ) );
+		$this->replace_attachment_metadata_file_path( $source_blog_id, $source_attachment_id, $target_blog_id, $destination_attachment_id, $destination_file );
+		$this->upsert_attachment_link( $source_blog_id, $source_attachment_id, $target_blog_id, $destination_attachment_id, $target_language, $source_uuid );
+		clean_post_cache( $destination_attachment_id );
+
+		return $destination_attachment_id;
+	}
+
+	/**
+	 * Copy postmeta rows for arbitrary source/destination post IDs.
+	 *
+	 * @param int $source_blog_id Source blog ID.
+	 * @param int $source_post_id Source post ID.
+	 * @param int $target_blog_id Target blog ID.
+	 * @param int $target_post_id Target post ID.
+	 * @return void
+	 */
+	private function copy_source_postmeta_sql_to_destination_for_posts( $source_blog_id, $source_post_id, $target_blog_id, $target_post_id ) {
+		global $wpdb;
+
+		$source_table = $wpdb->get_blog_prefix( $source_blog_id ) . 'postmeta';
+		$target_table = $wpdb->get_blog_prefix( $target_blog_id ) . 'postmeta';
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT meta_key, meta_value FROM {$source_table} WHERE post_id = %d",
+				$source_post_id
+			),
+			ARRAY_A
+		);
+
+		$wpdb->delete( $target_table, array( 'post_id' => $target_post_id ), array( '%d' ) );
+		foreach ( (array) $rows as $row ) {
+			$wpdb->insert(
+				$target_table,
+				array(
+					'post_id'    => $target_post_id,
 					'meta_key'   => $row['meta_key'],
 					'meta_value' => $row['meta_value'],
 				),
 				array( '%d', '%s', '%s' )
 			);
 		}
+	}
+
+	/**
+	 * Get an attached file path from a site.
+	 *
+	 * @param int $blog_id Blog ID.
+	 * @param int $attachment_id Attachment ID.
+	 * @return string
+	 */
+	private function get_attached_file_from_site( $blog_id, $attachment_id ) {
+		$restore = get_current_blog_id() !== $blog_id;
+		if ( $restore ) {
+			switch_to_blog( $blog_id );
+		}
+
+		$file = (string) get_attached_file( $attachment_id );
+
+		if ( $restore ) {
+			restore_current_blog();
+		}
+
+		return $file;
+	}
+
+	/**
+	 * Copy a file into a target site's uploads directory.
+	 *
+	 * @param string $source_file Source file path.
+	 * @param int    $target_blog_id Target blog ID.
+	 * @return string
+	 */
+	private function copy_file_to_uploads( $source_file, $target_blog_id ) {
+		$restore = get_current_blog_id() !== $target_blog_id;
+		if ( $restore ) {
+			switch_to_blog( $target_blog_id );
+		}
+
+		$uploads = wp_upload_dir();
+		if ( ! empty( $uploads['error'] ) || empty( $uploads['path'] ) ) {
+			if ( $restore ) {
+				restore_current_blog();
+			}
+			return '';
+		}
+
+		wp_mkdir_p( $uploads['path'] );
+		$destination = trailingslashit( $uploads['path'] ) . wp_unique_filename( $uploads['path'], basename( $source_file ) );
+		$copied = copy( $source_file, $destination );
+
+		if ( $restore ) {
+			restore_current_blog();
+		}
+
+		return $copied ? $destination : '';
+	}
+
+	/**
+	 * Get upload-relative path for a copied file.
+	 *
+	 * @param int    $blog_id Blog ID.
+	 * @param string $file File path.
+	 * @return string
+	 */
+	private function relative_upload_path( $blog_id, $file ) {
+		$restore = get_current_blog_id() !== $blog_id;
+		if ( $restore ) {
+			switch_to_blog( $blog_id );
+		}
+
+		$uploads = wp_upload_dir();
+		$relative = str_replace( trailingslashit( $uploads['basedir'] ), '', $file );
+
+		if ( $restore ) {
+			restore_current_blog();
+		}
+
+		return $relative;
+	}
+
+	/**
+	 * Get a public upload URL for a file path.
+	 *
+	 * @param int    $blog_id Blog ID.
+	 * @param string $file File path.
+	 * @return string
+	 */
+	private function upload_url_for_file( $blog_id, $file ) {
+		$restore = get_current_blog_id() !== $blog_id;
+		if ( $restore ) {
+			switch_to_blog( $blog_id );
+		}
+
+		$uploads = wp_upload_dir();
+		$url = trailingslashit( $uploads['baseurl'] ) . str_replace( trailingslashit( $uploads['basedir'] ), '', $file );
+
+		if ( $restore ) {
+			restore_current_blog();
+		}
+
+		return $url;
+	}
+
+	/**
+	 * Store a links-table row for a copied attachment.
+	 *
+	 * @param int    $source_blog_id Source blog ID.
+	 * @param int    $source_attachment_id Source attachment ID.
+	 * @param int    $target_blog_id Target blog ID.
+	 * @param int    $destination_attachment_id Destination attachment ID.
+	 * @param string $target_language Target language.
+	 * @param string $source_uuid Source UUID.
+	 * @return void
+	 */
+	private function upsert_attachment_link( $source_blog_id, $source_attachment_id, $target_blog_id, $destination_attachment_id, $target_language, $source_uuid ) {
+		$job = (object) array(
+			'id'                => 0,
+			'parent_queue_id'   => 0,
+			'action'            => 'media',
+			'source_blog_id'    => $source_blog_id,
+			'source_post_id'    => $source_attachment_id,
+			'target_blog_id'    => $target_blog_id,
+			'target_language'   => $target_language,
+			'post_type'         => 'attachment',
+		);
+		$payload = array(
+			'source_uuid'        => $source_uuid,
+			'post_name'          => $this->get_post_slug_from_site( $source_blog_id, $source_attachment_id ),
+			'original_post_name' => $this->get_post_slug_from_site( $source_blog_id, $source_attachment_id ),
+		);
+
+		$this->upsert_link( $job, $destination_attachment_id, $payload );
+	}
+
+	/**
+	 * Replace one postmeta key with SQL.
+	 *
+	 * @param int    $blog_id Blog ID.
+	 * @param int    $post_id Post ID.
+	 * @param string $meta_key Meta key.
+	 * @param mixed  $meta_value Meta value.
+	 * @return void
+	 */
+	private function replace_postmeta_sql( $blog_id, $post_id, $meta_key, $meta_value ) {
+		global $wpdb;
+
+		$table = $wpdb->get_blog_prefix( $blog_id ) . 'postmeta';
+		$wpdb->delete(
+			$table,
+			array(
+				'post_id'  => $post_id,
+				'meta_key' => $meta_key,
+			),
+			array( '%d', '%s' )
+		);
+		$wpdb->insert(
+			$table,
+			array(
+				'post_id'    => $post_id,
+				'meta_key'   => $meta_key,
+				'meta_value' => maybe_serialize( $meta_value ),
+			),
+			array( '%d', '%s', '%s' )
+		);
+	}
+
+	/**
+	 * Copy derivative image files listed in attachment metadata.
+	 *
+	 * @param int    $source_blog_id Source blog ID.
+	 * @param int    $source_attachment_id Source attachment ID.
+	 * @param int    $target_blog_id Target blog ID.
+	 * @param string $source_file Source original file.
+	 * @param string $destination_file Destination original file.
+	 * @return void
+	 */
+	private function copy_attachment_derivative_files( $source_blog_id, $source_attachment_id, $target_blog_id, $source_file, $destination_file ) {
+		$restore = get_current_blog_id() !== $source_blog_id;
+		if ( $restore ) {
+			switch_to_blog( $source_blog_id );
+		}
+
+		$metadata = wp_get_attachment_metadata( $source_attachment_id );
+
+		if ( $restore ) {
+			restore_current_blog();
+		}
+
+		if ( empty( $metadata['sizes'] ) || ! is_array( $metadata['sizes'] ) ) {
+			return;
+		}
+
+		$source_dir = trailingslashit( dirname( $source_file ) );
+		$destination_dir = trailingslashit( dirname( $destination_file ) );
+		wp_mkdir_p( $destination_dir );
+
+		foreach ( $metadata['sizes'] as $size ) {
+			if ( empty( $size['file'] ) ) {
+				continue;
+			}
+
+			$source_size_file = $source_dir . basename( $size['file'] );
+			$destination_size_file = $destination_dir . basename( $size['file'] );
+			if ( file_exists( $source_size_file ) ) {
+				copy( $source_size_file, $destination_size_file );
+			}
+		}
+	}
+
+	/**
+	 * Update copied attachment metadata to reference the destination file path.
+	 *
+	 * @param int    $source_blog_id Source blog ID.
+	 * @param int    $source_attachment_id Source attachment ID.
+	 * @param int    $target_blog_id Target blog ID.
+	 * @param int    $destination_attachment_id Destination attachment ID.
+	 * @param string $destination_file Destination original file.
+	 * @return void
+	 */
+	private function replace_attachment_metadata_file_path( $source_blog_id, $source_attachment_id, $target_blog_id, $destination_attachment_id, $destination_file ) {
+		$restore = get_current_blog_id() !== $source_blog_id;
+		if ( $restore ) {
+			switch_to_blog( $source_blog_id );
+		}
+
+		$metadata = wp_get_attachment_metadata( $source_attachment_id );
+
+		if ( $restore ) {
+			restore_current_blog();
+		}
+
+		if ( ! is_array( $metadata ) ) {
+			return;
+		}
+
+		$metadata['file'] = $this->relative_upload_path( $target_blog_id, $destination_file );
+		$this->replace_postmeta_sql( $target_blog_id, $destination_attachment_id, '_wp_attachment_metadata', $metadata );
+	}
+
+	/**
+	 * Ensure post ID dependencies in source meta exist on the destination.
+	 *
+	 * @param object $job Processing job.
+	 * @return array<string,string>|null
+	 */
+	private function ensure_meta_dependencies_for_job( $job ) {
+		$dependencies = $this->get_source_meta_post_dependencies( (int) $job->source_blog_id, (int) $job->source_post_id );
+
+		foreach ( $dependencies as $source_post_id ) {
+			if ( (int) $source_post_id === (int) $job->source_post_id ) {
+				continue;
+			}
+
+			$source_uuid = $this->get_or_create_source_uuid( (int) $job->source_blog_id, (int) $source_post_id );
+			$link = $this->get_link_for_source_target( $source_uuid, (int) $job->target_blog_id, sanitize_key( $job->target_language ) );
+			if ( $link && ! empty( $link->target_post_id ) ) {
+				continue;
+			}
+
+			$blocking_job_id = $this->create_blocking_processing_job( $job, (int) $source_post_id, $source_uuid );
+			if ( $blocking_job_id ) {
+				$this->block_processing_job( (int) $job->id, $blocking_job_id );
+
+				return array(
+					'status'  => 'blocked',
+					'message' => sprintf(
+						/* translators: 1: source post ID, 2: blocking job ID. */
+						__( 'Blocked by related source post #%1$d; created priority job #%2$d.', 'as-content-stream' ),
+						(int) $source_post_id,
+						(int) $blocking_job_id
+					),
+				);
+			}
+		}
+
+		return null;
+	}
+
+	/**
+	 * Get source post IDs referenced in meta values.
+	 *
+	 * @param int $blog_id Source blog ID.
+	 * @param int $post_id Source post ID.
+	 * @return int[]
+	 */
+	private function get_source_meta_post_dependencies( $blog_id, $post_id ) {
+		global $wpdb;
+
+		$table = $wpdb->get_blog_prefix( $blog_id ) . 'postmeta';
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT meta_key, meta_value FROM {$table} WHERE post_id = %d",
+				$post_id
+			),
+			ARRAY_A
+		);
+		$dependencies = array();
+
+		foreach ( (array) $rows as $row ) {
+			if ( '_thumbnail_id' === $row['meta_key'] || 0 === strpos( (string) $row['meta_key'], '_' ) ) {
+				continue;
+			}
+
+			foreach ( $this->extract_possible_post_ids( $row['meta_value'] ) as $possible_id ) {
+				if ( $this->source_post_exists( $blog_id, $possible_id, false ) ) {
+					$dependencies[] = $possible_id;
+				}
+			}
+		}
+
+		return array_values( array_unique( array_map( 'absint', $dependencies ) ) );
+	}
+
+	/**
+	 * Extract possible post IDs from scalar or serialized meta values.
+	 *
+	 * @param mixed $value Meta value.
+	 * @return int[]
+	 */
+	private function extract_possible_post_ids( $value ) {
+		if ( is_string( $value ) && is_serialized( $value ) ) {
+			return $this->extract_possible_post_ids( maybe_unserialize( $value ) );
+		}
+
+		if ( is_array( $value ) ) {
+			$ids = array();
+			foreach ( $value as $item ) {
+				$ids = array_merge( $ids, $this->extract_possible_post_ids( $item ) );
+			}
+			return $ids;
+		}
+
+		if ( is_numeric( $value ) && (int) $value > 0 ) {
+			return array( (int) $value );
+		}
+
+		return array();
+	}
+
+	/**
+	 * Check whether a source post exists.
+	 *
+	 * @param int  $blog_id Blog ID.
+	 * @param int  $post_id Post ID.
+	 * @param bool $allow_attachment Whether attachments count.
+	 * @return bool
+	 */
+	private function source_post_exists( $blog_id, $post_id, $allow_attachment = true ) {
+		$restore = get_current_blog_id() !== $blog_id;
+		if ( $restore ) {
+			switch_to_blog( $blog_id );
+		}
+
+		$post = get_post( $post_id );
+		$exists = $post instanceof WP_Post && ( $allow_attachment || 'attachment' !== $post->post_type );
+
+		if ( $restore ) {
+			restore_current_blog();
+		}
+
+		return $exists;
+	}
+
+	/**
+	 * Create a priority blocking job for a related source post.
+	 *
+	 * @param object $blocked_job Job being blocked.
+	 * @param int    $source_post_id Related source post ID.
+	 * @param string $source_uuid Related source UUID.
+	 * @return int
+	 */
+	private function create_blocking_processing_job( $blocked_job, $source_post_id, $source_uuid ) {
+		global $wpdb;
+
+		self::create_processing_queue_table();
+
+		$post_type = $this->get_post_type_from_site( (int) $blocked_job->source_blog_id, $source_post_id );
+		if ( '' === $post_type || 'attachment' === $post_type ) {
+			return 0;
+		}
+
+		$existing = $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT id FROM " . self::processing_queue_table_name() . " WHERE status <> 'complete' AND source_blog_id = %d AND source_post_id = %d AND target_blog_id = %d AND target_language = %s LIMIT 1",
+				(int) $blocked_job->source_blog_id,
+				$source_post_id,
+				(int) $blocked_job->target_blog_id,
+				sanitize_key( $blocked_job->target_language )
+			)
+		);
+		if ( $existing ) {
+			return (int) $existing;
+		}
+
+		$payload = $this->build_source_payload_from_post( (int) $blocked_job->source_blog_id, $source_post_id, $source_uuid, sanitize_key( $blocked_job->target_language ) );
+		$wpdb->insert(
+			self::processing_queue_table_name(),
+			array(
+				'created_at'      => current_time( 'mysql', true ),
+				'parent_queue_id' => (int) $blocked_job->parent_queue_id,
+				'link_id'         => 0,
+				'blocked_by'      => 0,
+				'priority'        => (int) $blocked_job->priority + 10,
+				'action'          => 'update',
+				'status'          => 'pending',
+				'source_blog_id'  => (int) $blocked_job->source_blog_id,
+				'source_post_id'  => $source_post_id,
+				'target_blog_id'  => (int) $blocked_job->target_blog_id,
+				'target_language' => sanitize_key( $blocked_job->target_language ),
+				'post_type'       => $post_type,
+				'payload'         => wp_json_encode( $payload ),
+				'result_message'  => sprintf(
+					/* translators: %d: blocked job ID. */
+					__( 'Priority dependency for blocked job #%d.', 'as-content-stream' ),
+					(int) $blocked_job->id
+				),
+			),
+			array( '%s', '%d', '%d', '%d', '%d', '%s', '%s', '%d', '%d', '%d', '%s', '%s', '%s', '%s' )
+		);
+
+		return (int) $wpdb->insert_id;
+	}
+
+	/**
+	 * Mark a processing job as blocked by another job.
+	 *
+	 * @param int $job_id Blocked job ID.
+	 * @param int $blocked_by Blocking job ID.
+	 * @return void
+	 */
+	private function block_processing_job( $job_id, $blocked_by ) {
+		global $wpdb;
+
+		$wpdb->update(
+			self::processing_queue_table_name(),
+			array(
+				'status'     => 'blocked',
+				'blocked_by' => $blocked_by,
+			),
+			array( 'id' => $job_id ),
+			array( '%s', '%d' ),
+			array( '%d' )
+		);
 	}
 
 	/**
@@ -1755,6 +2445,45 @@ class AS_Content_Stream {
 			array( 'link_id' => $link_id ),
 			array( 'id' => $job_id ),
 			array( '%d' ),
+			array( '%d' )
+		);
+	}
+
+	/**
+	 * Determine whether a processing job completed.
+	 *
+	 * @param int $job_id Processing job ID.
+	 * @return bool
+	 */
+	private function processing_job_is_complete( $job_id ) {
+		global $wpdb;
+
+		return 'complete' === (string) $wpdb->get_var(
+			$wpdb->prepare(
+				'SELECT status FROM ' . self::processing_queue_table_name() . ' WHERE id = %d LIMIT 1',
+				$job_id
+			)
+		);
+	}
+
+	/**
+	 * Unblock jobs waiting on a completed dependency.
+	 *
+	 * @param int $job_id Blocking job ID.
+	 * @return void
+	 */
+	private function unblock_processing_jobs_waiting_on( $job_id ) {
+		global $wpdb;
+
+		$wpdb->update(
+			self::processing_queue_table_name(),
+			array(
+				'status'         => 'pending',
+				'blocked_by'     => 0,
+				'result_message' => __( 'Dependency complete; queued to continue.', 'as-content-stream' ),
+			),
+			array( 'blocked_by' => $job_id ),
+			array( '%s', '%d', '%s' ),
 			array( '%d' )
 		);
 	}
@@ -1993,6 +2722,72 @@ class AS_Content_Stream {
 		}
 
 		return $payload;
+	}
+
+	/**
+	 * Build source payload from a source post.
+	 *
+	 * @param int    $blog_id Source blog ID.
+	 * @param int    $post_id Source post ID.
+	 * @param string $source_uuid Source UUID.
+	 * @param string $target_language Target language.
+	 * @return array<string,mixed>
+	 */
+	private function build_source_payload_from_post( $blog_id, $post_id, $source_uuid, $target_language ) {
+		$payload = array(
+			'source_uuid'     => sanitize_text_field( $source_uuid ),
+			'target_language' => sanitize_key( $target_language ),
+		);
+		$restore = get_current_blog_id() !== $blog_id;
+		if ( $restore ) {
+			switch_to_blog( $blog_id );
+		}
+
+		$post = get_post( $post_id );
+		if ( $post instanceof WP_Post ) {
+			$payload = array_merge(
+				$payload,
+				array(
+					'post_title'         => $post->post_title,
+					'post_status'        => $post->post_status,
+					'post_name'          => $post->post_name,
+					'post_date'          => $post->post_date,
+					'post_date_gmt'      => $post->post_date_gmt,
+					'post_modified'      => $post->post_modified,
+					'post_modified_gmt'  => $post->post_modified_gmt,
+					'original_post_name' => $this->get_original_post_name( $post ),
+				)
+			);
+		}
+
+		if ( $restore ) {
+			restore_current_blog();
+		}
+
+		return $payload;
+	}
+
+	/**
+	 * Get a post type from a site.
+	 *
+	 * @param int $blog_id Blog ID.
+	 * @param int $post_id Post ID.
+	 * @return string
+	 */
+	private function get_post_type_from_site( $blog_id, $post_id ) {
+		$restore = get_current_blog_id() !== $blog_id;
+		if ( $restore ) {
+			switch_to_blog( $blog_id );
+		}
+
+		$post = get_post( $post_id );
+		$post_type = $post instanceof WP_Post ? sanitize_key( $post->post_type ) : '';
+
+		if ( $restore ) {
+			restore_current_blog();
+		}
+
+		return $post_type;
 	}
 
 	/**
@@ -2565,7 +3360,7 @@ class AS_Content_Stream {
 
 		return (bool) $wpdb->get_var(
 			$wpdb->prepare(
-				'SELECT id FROM ' . self::processing_queue_table_name() . " WHERE parent_queue_id = %d AND status IN ('pending', 'in_progress') LIMIT 1",
+				'SELECT id FROM ' . self::processing_queue_table_name() . " WHERE parent_queue_id = %d AND status <> 'complete' LIMIT 1",
 				$parent_queue_id
 			)
 		);

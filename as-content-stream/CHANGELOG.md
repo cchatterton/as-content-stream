@@ -2,6 +2,14 @@
 
 All notable changes to AS Content Stream are recorded here.
 
+## 0.1.26 - 2026-08-01
+
+- Added processing queue job IDs, blocked-by IDs, and priority ordering.
+- Added blocked processing jobs and automatic unblocking after dependency jobs complete.
+- Added priority blocker job creation for related source posts referenced in postmeta.
+- Rewrites copied related-post meta values to destination post IDs once links exist.
+- Copies featured image files, attachment rows, attachment meta, and destination thumbnail references.
+
 ## 0.1.25 - 2026-08-01
 
 - Added a dedicated source/destination links table.
