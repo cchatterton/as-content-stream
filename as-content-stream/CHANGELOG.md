@@ -2,6 +2,13 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.43 - 2026-08-01
+
+- Reworked the Settings tab panels into a more compact, polished admin layout.
+- Changed Heartbeat metrics into paired gauge blocks with labels attached to their bars.
+- Simplified Network Status values so each tab row has a single right-aligned count.
+- Reduced button visual weight while keeping actions anchored at the bottom of each tile.
+
 ## 0.1.42 - 2026-08-01
 
 - Split Network Status into one row per queue/tab metric.

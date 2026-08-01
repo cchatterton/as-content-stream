@@ -516,7 +516,7 @@ class AS_Content_Stream {
 	 */
 	private function render_settings_tab() {
 		$sites        = $this->discover_sites();
-		$processing_counts = $this->get_processing_queue_counts();
+		$processing_open_count = $this->get_processing_queue_open_count();
 		$queue_action_counts = $this->get_queue_action_counts();
 		$streamed_count = $this->get_streamed_content_count();
 		$log_count = $this->get_processing_log_count();
@@ -532,7 +532,7 @@ class AS_Content_Stream {
 		);
 		$this->ensure_stream_author_for_sites( $wpml_sites );
 		?>
-		<div class="as-content-grid">
+		<div class="as-content-grid as-content-settings-grid">
 			<div class="as-content-panel">
 				<h2><?php esc_html_e( 'Target Language', 'as-content-stream' ); ?></h2>
 				<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_save_settings' ) ); ?>">
@@ -563,7 +563,7 @@ class AS_Content_Stream {
 						<tr><th scope="row"><?php esc_html_e( 'Create Queue', 'as-content-stream' ); ?></th><td><?php echo esc_html( isset( $queue_action_counts['create'] ) ? $queue_action_counts['create'] : 0 ); ?></td></tr>
 						<tr><th scope="row"><?php esc_html_e( 'Update Queue', 'as-content-stream' ); ?></th><td><?php echo esc_html( isset( $queue_action_counts['update'] ) ? $queue_action_counts['update'] : 0 ); ?></td></tr>
 						<tr><th scope="row"><?php esc_html_e( 'Delete Queue', 'as-content-stream' ); ?></th><td><?php echo esc_html( isset( $queue_action_counts['delete'] ) ? $queue_action_counts['delete'] : 0 ); ?></td></tr>
-						<tr><th scope="row"><?php esc_html_e( 'Processing Queue', 'as-content-stream' ); ?></th><td><?php echo esc_html( $this->format_counts( $processing_counts ) ); ?></td></tr>
+						<tr><th scope="row"><?php esc_html_e( 'Processing Queue', 'as-content-stream' ); ?></th><td><?php echo esc_html( $processing_open_count ); ?></td></tr>
 						<tr><th scope="row"><?php esc_html_e( 'Streamed Content', 'as-content-stream' ); ?></th><td><?php echo esc_html( $streamed_count ); ?></td></tr>
 						<tr><th scope="row"><?php esc_html_e( 'Log', 'as-content-stream' ); ?></th><td><?php echo esc_html( $log_count ); ?></td></tr>
 					</tbody>
@@ -576,22 +576,28 @@ class AS_Content_Stream {
 			<div class="as-content-panel">
 				<h2><?php esc_html_e( 'Heartbeat', 'as-content-stream' ); ?></h2>
 				<div id="as-content-heartbeat" data-nonce="<?php echo esc_attr( wp_create_nonce( self::NONCE_HEARTBEAT ) ); ?>">
-					<table class="as-content-metric-table as-content-progress-label">
+					<table class="as-content-metric-table as-content-heartbeat-meta">
 						<tbody>
 							<tr><th scope="row"><?php esc_html_e( 'Next check', 'as-content-stream' ); ?></th><td><span data-as-heartbeat="next_check"><?php echo esc_html( $heartbeat['next_check_seconds'] ); ?></span> <?php esc_html_e( 'sec', 'as-content-stream' ); ?></td></tr>
-							<tr><th scope="row"><?php esc_html_e( 'In progress / Pending', 'as-content-stream' ); ?></th><td><span data-as-heartbeat="parent_in_progress"><?php echo esc_html( $heartbeat['parent_in_progress'] ); ?></span> / <span data-as-heartbeat="parent_pending"><?php echo esc_html( $heartbeat['parent_pending'] ); ?></span></td></tr>
 						</tbody>
 					</table>
-					<div class="as-content-progress" aria-hidden="true">
-						<span data-as-heartbeat-bar="parent" style="width: <?php echo esc_attr( $heartbeat['parent_pressure_percent'] ); ?>%;"></span>
+					<div class="as-content-gauge">
+						<div class="as-content-gauge-meta">
+							<span><?php esc_html_e( 'In progress / Pending', 'as-content-stream' ); ?></span>
+							<strong><span data-as-heartbeat="parent_in_progress"><?php echo esc_html( $heartbeat['parent_in_progress'] ); ?></span> / <span data-as-heartbeat="parent_pending"><?php echo esc_html( $heartbeat['parent_pending'] ); ?></span></strong>
+						</div>
+						<div class="as-content-progress" aria-hidden="true">
+							<span data-as-heartbeat-bar="parent" style="width: <?php echo esc_attr( $heartbeat['parent_pressure_percent'] ); ?>%;"></span>
+						</div>
 					</div>
-					<table class="as-content-metric-table as-content-progress-label">
-						<tbody>
-							<tr><th scope="row"><?php esc_html_e( 'Queued / Blocked', 'as-content-stream' ); ?></th><td><span data-as-heartbeat="child_queued"><?php echo esc_html( $heartbeat['child_queued'] ); ?></span> / <span data-as-heartbeat="child_blocked"><?php echo esc_html( $heartbeat['child_blocked'] ); ?></span></td></tr>
-						</tbody>
-					</table>
-					<div class="as-content-progress as-content-progress-danger" aria-hidden="true">
-						<span data-as-heartbeat-bar="child" style="width: <?php echo esc_attr( $heartbeat['child_blocked_percent'] ); ?>%;"></span>
+					<div class="as-content-gauge">
+						<div class="as-content-gauge-meta">
+							<span><?php esc_html_e( 'Queued / Blocked', 'as-content-stream' ); ?></span>
+							<strong><span data-as-heartbeat="child_queued"><?php echo esc_html( $heartbeat['child_queued'] ); ?></span> / <span data-as-heartbeat="child_blocked"><?php echo esc_html( $heartbeat['child_blocked'] ); ?></span></strong>
+						</div>
+						<div class="as-content-progress as-content-progress-danger" aria-hidden="true">
+							<span data-as-heartbeat-bar="child" style="width: <?php echo esc_attr( $heartbeat['child_blocked_percent'] ); ?>%;"></span>
+						</div>
 					</div>
 					<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_save_settings' ) ); ?>">
 						<?php wp_nonce_field( self::NONCE_SETTINGS ); ?>
@@ -4206,6 +4212,19 @@ class AS_Content_Stream {
 		}
 
 		return $counts;
+	}
+
+	/**
+	 * Get non-complete processing queue count.
+	 *
+	 * @return int
+	 */
+	private function get_processing_queue_open_count() {
+		global $wpdb;
+
+		self::create_processing_queue_table();
+
+		return (int) $wpdb->get_var( "SELECT COUNT(*) FROM " . self::processing_queue_table_name() . " WHERE status <> 'complete'" );
 	}
 
 	/**
