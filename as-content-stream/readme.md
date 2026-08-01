@@ -1,7 +1,7 @@
 # AS Content Stream
 
 Author: AlphaSys
-Version: 0.1.28
+Version: 0.1.29
 Status: POC
 
 ## Purpose
@@ -58,7 +58,7 @@ as-content-stream/
 - GitHub releases must include `as-content-stream.zip` as a release asset.
 - Processing jobs copy source post content and postmeta with SQL; newly-created destination posts are forced to draft.
 - Source/destination relationships are stored in `wp_as_content_stream_links`, not postmeta.
-- Processing Queue exposes job IDs, blocked-by IDs, and manual Run controls for dependency handling.
+- Processing Queue exposes job IDs, blocked-by IDs, post type, and manual Run controls for dependency handling.
 - Revision and autosave records are excluded from the queues.
 - Future processors should clear queues in order: create, then update, then delete.
 - Target language defaults to the most common language across destination WPML sites until manually saved.

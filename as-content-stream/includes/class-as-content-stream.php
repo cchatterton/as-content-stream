@@ -667,6 +667,7 @@ class AS_Content_Stream {
 					<th><?php esc_html_e( 'Action', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Status', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Source', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Post Type', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Destination', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Language', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Attempts', 'as-content-stream' ); ?></th>
@@ -677,7 +678,7 @@ class AS_Content_Stream {
 			</thead>
 			<tbody>
 				<?php if ( empty( $items ) ) : ?>
-					<tr><td colspan="13"><?php esc_html_e( 'No processing jobs yet.', 'as-content-stream' ); ?></td></tr>
+					<tr><td colspan="14"><?php esc_html_e( 'No processing jobs yet.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
 				<?php foreach ( $items as $item ) : ?>
 					<?php
@@ -686,6 +687,7 @@ class AS_Content_Stream {
 					$source_url = $source_url ? $source_url : $this->site_admin_url( (int) $item->source_blog_id );
 					$target_url = $this->destination_edit_url( (int) $item->target_blog_id, sanitize_key( $item->post_type ), $payload );
 					$target_url = $target_url ? $target_url : $this->site_admin_url( (int) $item->target_blog_id );
+					$is_blocked = 'blocked' === sanitize_key( $item->status ) || ! empty( $item->blocked_by );
 					?>
 					<tr>
 						<td><?php echo esc_html( '#' . (int) $item->id ); ?></td>
@@ -694,7 +696,8 @@ class AS_Content_Stream {
 						<td><?php echo esc_html( ! empty( $item->blocked_by ) ? '#' . (int) $item->blocked_by : '-' ); ?></td>
 						<td><?php echo esc_html( ucfirst( $item->action ) ); ?></td>
 						<td><?php echo esc_html( ucfirst( $item->status ) ); ?></td>
-						<td><a href="<?php echo esc_url( $source_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $this->site_label( (int) $item->source_blog_id ) . ' #' . (int) $item->source_post_id ); ?></a></td>
+						<td><a href="<?php echo esc_url( $source_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( '#' . (int) $item->source_post_id ); ?></a></td>
+						<td><?php echo esc_html( sanitize_key( $item->post_type ) ); ?></td>
 						<td><a href="<?php echo esc_url( $target_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $this->site_label( (int) $item->target_blog_id ) ); ?></a></td>
 						<td><?php echo esc_html( $item->target_language ); ?></td>
 						<td><?php echo esc_html( (int) $item->attempts ); ?></td>
@@ -704,7 +707,7 @@ class AS_Content_Stream {
 							<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_run_processing_job' ) ); ?>">
 								<?php wp_nonce_field( self::NONCE_PROCESSING ); ?>
 								<input type="hidden" name="job_id" value="<?php echo esc_attr( (int) $item->id ); ?>">
-								<?php submit_button( __( 'Run', 'as-content-stream' ), 'secondary small', 'submit', false ); ?>
+								<?php submit_button( __( 'Run', 'as-content-stream' ), 'secondary small', 'submit', false, $is_blocked ? array( 'disabled' => 'disabled' ) : array() ); ?>
 							</form>
 						</td>
 					</tr>
@@ -2625,8 +2628,11 @@ class AS_Content_Stream {
 				)
 			);
 			if ( $job ) {
-				$this->process_processing_job_row( $job );
-				$this->complete_source_queue_item_if_ready( (int) $job->parent_queue_id );
+				$is_blocked = 'blocked' === sanitize_key( $job->status ) || ! empty( $job->blocked_by );
+				if ( ! $is_blocked ) {
+					$this->process_processing_job_row( $job );
+					$this->complete_source_queue_item_if_ready( (int) $job->parent_queue_id );
+				}
 			}
 		}
 

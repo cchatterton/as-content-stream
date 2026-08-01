@@ -2,6 +2,12 @@
 
 All notable changes to AS Content Stream are recorded here.
 
+## 0.1.29 - 2026-08-01
+
+- Added a Post Type column to the Processing Queue.
+- Simplified Processing Queue source links to show only the source post ID.
+- Disabled Processing Queue Run controls for blocked jobs.
+
 ## 0.1.28 - 2026-08-01
 
 - Removed the redundant Run One Manual Step control from the Heartbeat tile.
