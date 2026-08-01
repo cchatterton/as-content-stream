@@ -2,6 +2,14 @@
 
 All notable changes to AS Content Stream are recorded here.
 
+## 0.1.23 - 2026-08-01
+
+- Kept failed and skipped jobs in Processing Queue instead of Log.
+- Added a Re-run control for failed and skipped processing jobs.
+- Limited destination streaming to title, dates, operational identifiers, and the integration author.
+- Hydrated older processing jobs from the source post when missing stream UUID payload data.
+- Kept source queue parents in progress until every child processing job completes successfully.
+
 ## 0.1.22 - 2026-08-01
 
 - Changed the test button to use the main processing flow with a one-job processing limit.

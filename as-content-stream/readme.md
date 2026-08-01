@@ -1,7 +1,7 @@
 # AS Content Stream
 
 Author: AlphaSys
-Version: 0.1.22
+Version: 0.1.23
 Status: POC
 
 ## Purpose
@@ -25,6 +25,7 @@ AS Content Stream is a network-enabled WordPress plugin scaffold for multisite c
 - Runs the manual processing test against a single sampled destination job.
 - Links source and destination sites from the Processing Queue and Log tabs.
 - Creates/updates/trashes destination posts from processing jobs with stream identifiers and the integration author.
+- Keeps failed processing jobs out of Log and available for retry in Processing Queue.
 - Supports WordPress-native updates from GitHub releases.
 
 ## Folder Structure
@@ -50,12 +51,12 @@ as-content-stream/
 - Deleted, archived, and spammed multisite sites are excluded from discovery and queue targets.
 - WPML active status reflects live plugin activation for that site, not historical WPML settings.
 - GitHub releases must include `as-content-stream.zip` as a release asset.
-- Processing jobs now perform lightweight destination create, update, and trash actions.
+- Processing jobs now perform lightweight destination create, update, and trash actions for title, dates, operational identifiers, and integration author only.
 - Revision and autosave records are excluded from the queues.
 - Future processors should clear queues in order: create, then update, then delete.
 - Target language defaults to the most common language across destination WPML sites until manually saved.
 - Processing cron can be toggled on and off from Settings.
-- Processing Queue shows active per-site jobs; Log shows completed processing jobs.
+- Processing Queue shows pending, in-progress, skipped, and failed per-site jobs; Log shows completed processing jobs only.
 - Log shows the latest 100 completed jobs and can be cleared from the Log tab.
 
 ## Future Considerations

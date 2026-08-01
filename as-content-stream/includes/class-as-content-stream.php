@@ -20,6 +20,7 @@ class AS_Content_Stream {
 	const NONCE_SETTINGS         = 'as_content_stream_settings';
 	const NONCE_QUEUE            = 'as_content_stream_queue';
 	const NONCE_LOG              = 'as_content_stream_log';
+	const NONCE_PROCESSING       = 'as_content_stream_processing';
 	const NONCE_HEARTBEAT        = 'as_content_stream_heartbeat';
 	const NONCE_TEST_TICK        = 'as_content_stream_test_tick';
 	const PAGE_SLUG              = 'as-content-stream';
@@ -95,6 +96,7 @@ class AS_Content_Stream {
 		add_action( 'admin_post_as_content_stream_save_settings', array( $this, 'save_settings' ) );
 		add_action( 'admin_post_as_content_stream_clear_queue', array( $this, 'clear_queue' ) );
 		add_action( 'admin_post_as_content_stream_clear_log', array( $this, 'clear_log' ) );
+		add_action( 'admin_post_as_content_stream_retry_processing_job', array( $this, 'retry_processing_job' ) );
 		add_action( 'admin_post_as_content_stream_test_tick', array( $this, 'run_test_tick' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ) );
 		add_action( 'wp_ajax_as_content_stream_heartbeat', array( $this, 'ajax_heartbeat' ) );
@@ -629,11 +631,12 @@ class AS_Content_Stream {
 					<th><?php esc_html_e( 'Attempts', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Duration', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Result', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Control', 'as-content-stream' ); ?></th>
 				</tr>
 			</thead>
 			<tbody>
 				<?php if ( empty( $items ) ) : ?>
-					<tr><td colspan="10"><?php esc_html_e( 'No processing jobs yet.', 'as-content-stream' ); ?></td></tr>
+					<tr><td colspan="11"><?php esc_html_e( 'No processing jobs yet.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
 				<?php foreach ( $items as $item ) : ?>
 					<?php
@@ -654,6 +657,17 @@ class AS_Content_Stream {
 						<td><?php echo esc_html( (int) $item->attempts ); ?></td>
 						<td><?php echo esc_html( (int) $item->duration_ms . 'ms' ); ?></td>
 						<td><?php echo esc_html( $item->result_message ); ?></td>
+						<td>
+							<?php if ( in_array( $item->status, array( 'failed', 'skipped' ), true ) ) : ?>
+								<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_retry_processing_job' ) ); ?>">
+									<?php wp_nonce_field( self::NONCE_PROCESSING ); ?>
+									<input type="hidden" name="job_id" value="<?php echo esc_attr( (int) $item->id ); ?>">
+									<?php submit_button( __( 'Re-run', 'as-content-stream' ), 'secondary small', 'submit', false ); ?>
+								</form>
+							<?php else : ?>
+								<?php echo esc_html( '-' ); ?>
+							<?php endif; ?>
+						</td>
 					</tr>
 				<?php endforeach; ?>
 			</tbody>
@@ -1016,39 +1030,54 @@ class AS_Content_Stream {
 		$done = 0;
 
 		foreach ( $jobs as $job ) {
-			$started = microtime( true );
-			$wpdb->update(
-				self::processing_queue_table_name(),
-				array(
-					'status'     => 'in_progress',
-					'started_at' => current_time( 'mysql', true ),
-					'attempts'   => (int) $job->attempts + 1,
-				),
-				array( 'id' => (int) $job->id ),
-				array( '%s', '%s', '%d' ),
-				array( '%d' )
-			);
-
-			$result = $this->process_processing_job( $job );
-			$wpdb->update(
-				self::processing_queue_table_name(),
-				array(
-					'status'         => $result['status'],
-					'completed_at'   => current_time( 'mysql', true ),
-					'duration_ms'    => $this->duration_ms( $started ),
-					'result_message' => $result['message'],
-				),
-				array( 'id' => (int) $job->id ),
-				array( '%s', '%s', '%d', '%s' ),
-				array( '%d' )
-			);
-			$done++;
+			if ( $this->process_processing_job_row( $job ) ) {
+				$done++;
+			}
 		}
 
 		return array(
 			'total' => $total,
 			'done'  => $done,
 		);
+	}
+
+	/**
+	 * Process one processing queue row.
+	 *
+	 * @param object $job Processing job.
+	 * @return bool
+	 */
+	private function process_processing_job_row( $job ) {
+		global $wpdb;
+
+		$started = microtime( true );
+		$wpdb->update(
+			self::processing_queue_table_name(),
+			array(
+				'status'     => 'in_progress',
+				'started_at' => current_time( 'mysql', true ),
+				'attempts'   => (int) $job->attempts + 1,
+			),
+			array( 'id' => (int) $job->id ),
+			array( '%s', '%s', '%d' ),
+			array( '%d' )
+		);
+
+		$result = $this->process_processing_job( $job );
+		$updated = $wpdb->update(
+			self::processing_queue_table_name(),
+			array(
+				'status'         => $result['status'],
+				'completed_at'   => current_time( 'mysql', true ),
+				'duration_ms'    => $this->duration_ms( $started ),
+				'result_message' => $result['message'],
+			),
+			array( 'id' => (int) $job->id ),
+			array( '%s', '%s', '%d', '%s' ),
+			array( '%d' )
+		);
+
+		return false !== $updated;
 	}
 
 	/**
@@ -1078,7 +1107,7 @@ class AS_Content_Stream {
 	 * @return array<string,string>
 	 */
 	private function process_upsert_job( $job ) {
-		$payload = $this->decode_queue_payload( $job->payload );
+		$payload = $this->hydrate_processing_payload( $job, $this->decode_queue_payload( $job->payload ) );
 		$source_uuid = isset( $payload['source_uuid'] ) ? sanitize_text_field( $payload['source_uuid'] ) : '';
 
 		if ( '' === $source_uuid ) {
@@ -1157,7 +1186,7 @@ class AS_Content_Stream {
 	 * @return array<string,string>
 	 */
 	private function process_delete_job( $job ) {
-		$payload = $this->decode_queue_payload( $job->payload );
+		$payload = $this->hydrate_processing_payload( $job, $this->decode_queue_payload( $job->payload ) );
 		$restore = get_current_blog_id() !== (int) $job->target_blog_id;
 		if ( $restore ) {
 			switch_to_blog( (int) $job->target_blog_id );
@@ -1201,6 +1230,69 @@ class AS_Content_Stream {
 		return array(
 			'status'  => sanitize_key( $status ),
 			'message' => sanitize_text_field( $message ),
+		);
+	}
+
+	/**
+	 * Fill missing processing payload fields from the source post.
+	 *
+	 * @param object              $job Processing job.
+	 * @param array<string,mixed> $payload Processing payload.
+	 * @return array<string,mixed>
+	 */
+	private function hydrate_processing_payload( $job, $payload ) {
+		if ( ! empty( $payload['source_uuid'] ) && ! empty( $payload['post_title'] ) ) {
+			return $payload;
+		}
+
+		$restore = get_current_blog_id() !== (int) $job->source_blog_id;
+		if ( $restore ) {
+			switch_to_blog( (int) $job->source_blog_id );
+		}
+
+		$post = get_post( (int) $job->source_post_id );
+		if ( $post instanceof WP_Post ) {
+			$payload = array_merge(
+				$payload,
+				array(
+					'source_uuid'        => $this->ensure_source_stream_uuid( (int) $job->source_post_id ),
+					'post_title'         => $post->post_title,
+					'post_status'        => $post->post_status,
+					'post_name'          => $post->post_name,
+					'post_date'          => $post->post_date,
+					'post_date_gmt'      => $post->post_date_gmt,
+					'post_modified'      => $post->post_modified,
+					'post_modified_gmt'  => $post->post_modified_gmt,
+					'original_post_name' => $this->get_original_post_name( $post ),
+				)
+			);
+		}
+
+		if ( $restore ) {
+			restore_current_blog();
+		}
+
+		$this->update_processing_job_payload( (int) $job->id, $payload );
+
+		return $payload;
+	}
+
+	/**
+	 * Persist a hydrated processing payload.
+	 *
+	 * @param int                 $job_id Processing job ID.
+	 * @param array<string,mixed> $payload Processing payload.
+	 * @return void
+	 */
+	private function update_processing_job_payload( $job_id, $payload ) {
+		global $wpdb;
+
+		$wpdb->update(
+			self::processing_queue_table_name(),
+			array( 'payload' => wp_json_encode( $payload ) ),
+			array( 'id' => $job_id ),
+			array( '%s' ),
+			array( '%d' )
 		);
 	}
 
@@ -1258,17 +1350,14 @@ class AS_Content_Stream {
 
 		return array(
 			'post_author'    => $author_id,
-			'post_content'   => isset( $payload['post_content'] ) ? (string) $payload['post_content'] : '',
-			'post_excerpt'   => isset( $payload['post_excerpt'] ) ? (string) $payload['post_excerpt'] : '',
 			'post_name'      => isset( $payload['original_post_name'] ) && '' !== $payload['original_post_name'] ? sanitize_title( $payload['original_post_name'] ) : sanitize_title( isset( $payload['post_name'] ) ? $payload['post_name'] : '' ),
 			'post_date'      => isset( $payload['post_date'] ) ? (string) $payload['post_date'] : '',
 			'post_date_gmt'  => isset( $payload['post_date_gmt'] ) ? (string) $payload['post_date_gmt'] : '',
+			'post_modified'  => isset( $payload['post_modified'] ) ? (string) $payload['post_modified'] : '',
+			'post_modified_gmt' => isset( $payload['post_modified_gmt'] ) ? (string) $payload['post_modified_gmt'] : '',
 			'post_status'    => $post_status,
 			'post_title'     => isset( $payload['post_title'] ) ? (string) $payload['post_title'] : '',
 			'post_type'      => sanitize_key( $job->post_type ),
-			'comment_status' => isset( $payload['comment_status'] ) ? sanitize_key( $payload['comment_status'] ) : 'closed',
-			'ping_status'    => isset( $payload['ping_status'] ) ? sanitize_key( $payload['ping_status'] ) : 'closed',
-			'menu_order'     => isset( $payload['menu_order'] ) ? (int) $payload['menu_order'] : 0,
 		);
 	}
 
@@ -1289,9 +1378,6 @@ class AS_Content_Stream {
 		update_post_meta( $destination_post_id, self::META_TARGET_LANGUAGE, sanitize_key( $job->target_language ) );
 		update_post_meta( $destination_post_id, self::META_MANAGED, 1 );
 
-		if ( isset( $payload['page_template'] ) && '' !== $payload['page_template'] ) {
-			update_post_meta( $destination_post_id, '_wp_page_template', sanitize_text_field( $payload['page_template'] ) );
-		}
 	}
 
 	/**
@@ -1361,7 +1447,7 @@ class AS_Content_Stream {
 
 		$open_jobs = (int) $wpdb->get_var(
 			$wpdb->prepare(
-				'SELECT COUNT(*) FROM ' . self::processing_queue_table_name() . " WHERE parent_queue_id = %d AND status IN ('pending', 'in_progress')",
+				'SELECT COUNT(*) FROM ' . self::processing_queue_table_name() . " WHERE parent_queue_id = %d AND status <> 'complete'",
 				$parent_queue_id
 			)
 		);
@@ -1412,9 +1498,43 @@ class AS_Content_Stream {
 
 		global $wpdb;
 		self::create_processing_queue_table();
-		$wpdb->query( "DELETE FROM " . self::processing_queue_table_name() . " WHERE status IN ('complete', 'skipped', 'failed')" );
+		$wpdb->query( "DELETE FROM " . self::processing_queue_table_name() . " WHERE status = 'complete'" );
 
 		wp_safe_redirect( $this->admin_url( array( 'tab' => 'log', 'log_cleared' => 1 ) ) );
+		exit;
+	}
+
+	/**
+	 * Reset a failed processing job for another run.
+	 *
+	 * @return void
+	 */
+	public function retry_processing_job() {
+		if ( ! is_multisite() || ! is_main_site() || ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You do not have permission to update AS Content Stream.', 'as-content-stream' ) );
+		}
+
+		check_admin_referer( self::NONCE_PROCESSING );
+
+		$job_id = isset( $_POST['job_id'] ) ? absint( $_POST['job_id'] ) : 0;
+		if ( $job_id ) {
+			global $wpdb;
+			self::create_processing_queue_table();
+			$job = $wpdb->get_row(
+				$wpdb->prepare(
+					'SELECT * FROM ' . self::processing_queue_table_name() . ' WHERE id = %d AND status IN (%s, %s)',
+					$job_id,
+					'failed',
+					'skipped'
+				)
+			);
+			if ( $job ) {
+				$this->process_processing_job_row( $job );
+				$this->complete_source_queue_item_if_ready( (int) $job->parent_queue_id );
+			}
+		}
+
+		wp_safe_redirect( $this->admin_url( array( 'tab' => 'processing_queue', 'updated' => 1 ) ) );
 		exit;
 	}
 
@@ -1504,17 +1624,13 @@ class AS_Content_Stream {
 				'payload'         => array(
 					'source_uuid'        => $source_uuid,
 					'post_title'         => $post->post_title,
-					'post_content'       => $post->post_content,
-					'post_excerpt'       => $post->post_excerpt,
 					'post_status'        => $post->post_status,
 					'post_name'          => $post->post_name,
 					'post_date'          => $post->post_date,
 					'post_date_gmt'      => $post->post_date_gmt,
+					'post_modified'      => $post->post_modified,
+					'post_modified_gmt'  => $post->post_modified_gmt,
 					'original_post_name' => $this->get_original_post_name( $post ),
-					'comment_status'     => $post->comment_status,
-					'ping_status'        => $post->ping_status,
-					'menu_order'         => (int) $post->menu_order,
-					'page_template'      => get_post_meta( $source_post_id, '_wp_page_template', true ),
 				),
 			)
 		);
@@ -1947,7 +2063,7 @@ class AS_Content_Stream {
 
 		self::create_processing_queue_table();
 
-		$status_sql = $terminal ? "status IN ('complete', 'skipped', 'failed')" : "status NOT IN ('complete', 'skipped', 'failed')";
+		$status_sql = $terminal ? "status = 'complete'" : "status <> 'complete'";
 
 		return $wpdb->get_results( 'SELECT * FROM ' . self::processing_queue_table_name() . ' WHERE ' . $status_sql . ' ORDER BY id DESC LIMIT 100' );
 	}
