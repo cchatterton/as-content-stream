@@ -331,7 +331,7 @@ class AS_Content_Stream {
 			'update_queue' => __( 'Update Queue', 'as-content-stream' ),
 			'delete_queue' => __( 'Delete Queue', 'as-content-stream' ),
 			'processing_queue' => __( 'Processing Queue', 'as-content-stream' ),
-			'links'        => __( 'Links', 'as-content-stream' ),
+			'links'        => __( 'Streamed Content', 'as-content-stream' ),
 			'log'          => __( 'Log', 'as-content-stream' ),
 		);
 
@@ -668,6 +668,7 @@ class AS_Content_Stream {
 					<th><?php esc_html_e( 'Action', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Status', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Source', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Source Title', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Post Type', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Destination', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Language', 'as-content-stream' ); ?></th>
@@ -679,7 +680,7 @@ class AS_Content_Stream {
 			</thead>
 			<tbody>
 				<?php if ( empty( $items ) ) : ?>
-					<tr><td colspan="14"><?php esc_html_e( 'No processing jobs yet.', 'as-content-stream' ); ?></td></tr>
+					<tr><td colspan="15"><?php esc_html_e( 'No processing jobs yet.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
 				<?php foreach ( $items as $item ) : ?>
 					<?php
@@ -698,6 +699,7 @@ class AS_Content_Stream {
 						<td><?php echo esc_html( ucfirst( $item->action ) ); ?></td>
 						<td><?php echo esc_html( ucfirst( $item->status ) ); ?></td>
 						<td><a href="<?php echo esc_url( $source_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( '#' . (int) $item->source_post_id ); ?></a></td>
+						<td><?php echo esc_html( isset( $payload['post_title'] ) ? $payload['post_title'] : $this->get_post_title_from_site( (int) $item->source_blog_id, (int) $item->source_post_id ) ); ?></td>
 						<td><?php echo esc_html( sanitize_key( $item->post_type ) ); ?></td>
 						<td><a href="<?php echo esc_url( $target_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $this->site_label( (int) $item->target_blog_id ) ); ?></a></td>
 						<td><?php echo esc_html( $item->target_language ); ?></td>
@@ -743,21 +745,24 @@ class AS_Content_Stream {
 		<table class="widefat striped as-content-queue">
 			<thead>
 				<tr>
+					<th><?php esc_html_e( 'Job', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Completed', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Parent', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Action', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Status', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Source', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Source Title', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Post Type', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Destination', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Language', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Attempts', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Duration', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Result', 'as-content-stream' ); ?></th>
 				</tr>
 			</thead>
 			<tbody>
 				<?php if ( empty( $items ) ) : ?>
-					<tr><td colspan="10"><?php esc_html_e( 'No completed processing jobs yet.', 'as-content-stream' ); ?></td></tr>
+					<tr><td colspan="13"><?php esc_html_e( 'No completed processing jobs yet.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
 				<?php foreach ( $items as $item ) : ?>
 					<?php
@@ -768,14 +773,17 @@ class AS_Content_Stream {
 					$target_url = $target_url ? $target_url : $this->site_admin_url( (int) $item->target_blog_id );
 					?>
 					<tr>
+						<td><?php echo esc_html( '#' . (int) $item->id ); ?></td>
 						<td><?php echo esc_html( $item->completed_at ); ?></td>
 						<td><?php echo esc_html( '#' . (int) $item->parent_queue_id ); ?></td>
 						<td><?php echo esc_html( ucfirst( $item->action ) ); ?></td>
 						<td><?php echo esc_html( ucfirst( $item->status ) ); ?></td>
 						<td><a href="<?php echo esc_url( $source_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( '#' . (int) $item->source_post_id ); ?></a></td>
+						<td><?php echo esc_html( isset( $payload['post_title'] ) ? $payload['post_title'] : $this->get_post_title_from_site( (int) $item->source_blog_id, (int) $item->source_post_id ) ); ?></td>
 						<td><?php echo esc_html( sanitize_key( $item->post_type ) ); ?></td>
 						<td><a href="<?php echo esc_url( $target_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $this->site_label( (int) $item->target_blog_id ) ); ?></a></td>
 						<td><?php echo esc_html( $item->target_language ); ?></td>
+						<td><?php echo esc_html( (int) $item->attempts ); ?></td>
 						<td><?php echo esc_html( (int) $item->duration_ms . 'ms' ); ?></td>
 						<td><?php echo esc_html( $item->result_message ); ?></td>
 					</tr>
@@ -805,25 +813,26 @@ class AS_Content_Stream {
 					<a class="button" href="<?php echo esc_url( $this->admin_url( array( 'tab' => 'links' ) ) ); ?>"><?php esc_html_e( 'Clear', 'as-content-stream' ); ?></a>
 				<?php endif; ?>
 			</form>
-			<p><?php echo esc_html( $lookup_id ? __( 'Showing links where that ID is source or destination.', 'as-content-stream' ) : __( 'Showing the latest 100 links.', 'as-content-stream' ) ); ?></p>
+			<p><?php echo esc_html( $lookup_id ? __( 'Showing streamed content where that ID is source or destination.', 'as-content-stream' ) : __( 'Showing the latest 100 streamed content links.', 'as-content-stream' ) ); ?></p>
 		</div>
 		<table class="widefat striped as-content-queue">
 			<thead>
 				<tr>
 					<th><?php esc_html_e( 'Link', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Last Streamed', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Last Action', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Status', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Source', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Source Title', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Post Type', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Destination', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Language', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Status', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Last Action', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Last Streamed', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Run', 'as-content-stream' ); ?></th>
 				</tr>
 			</thead>
 			<tbody>
 				<?php if ( empty( $links ) ) : ?>
-					<tr><td colspan="9"><?php esc_html_e( 'No source/destination links found.', 'as-content-stream' ); ?></td></tr>
+					<tr><td colspan="10"><?php esc_html_e( 'No streamed content found.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
 				<?php foreach ( $links as $link ) : ?>
 					<?php
@@ -832,13 +841,14 @@ class AS_Content_Stream {
 					?>
 					<tr>
 						<td><?php echo esc_html( '#' . (int) $link->id ); ?></td>
+						<td><?php echo esc_html( $link->last_streamed_at ? $link->last_streamed_at : '-' ); ?></td>
+						<td><?php echo esc_html( ucfirst( $link->last_action ) ); ?></td>
+						<td><?php echo esc_html( ucfirst( $link->status ) ); ?></td>
 						<td><a href="<?php echo esc_url( $source_url ? $source_url : $this->site_admin_url( (int) $link->source_blog_id ) ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( '#' . (int) $link->source_post_id ); ?></a></td>
+						<td><?php echo esc_html( $this->get_post_title_from_site( (int) $link->source_blog_id, (int) $link->source_post_id ) ); ?></td>
 						<td><?php echo esc_html( sanitize_key( $link->source_post_type ) ); ?></td>
 						<td><a href="<?php echo esc_url( $target_url ? $target_url : $this->site_admin_url( (int) $link->target_blog_id ) ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $this->site_label( (int) $link->target_blog_id ) . ' #' . (int) $link->target_post_id ); ?></a></td>
 						<td><?php echo esc_html( $link->target_language ); ?></td>
-						<td><?php echo esc_html( ucfirst( $link->status ) ); ?></td>
-						<td><?php echo esc_html( ucfirst( $link->last_action ) ); ?></td>
-						<td><?php echo esc_html( $link->last_streamed_at ? $link->last_streamed_at : '-' ); ?></td>
 						<td>
 							<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_run_link' ) ); ?>">
 								<?php wp_nonce_field( self::NONCE_PROCESSING ); ?>
@@ -2439,6 +2449,29 @@ class AS_Content_Stream {
 		}
 
 		return $slug;
+	}
+
+	/**
+	 * Get a post title from a site.
+	 *
+	 * @param int $blog_id Blog ID.
+	 * @param int $post_id Post ID.
+	 * @return string
+	 */
+	private function get_post_title_from_site( $blog_id, $post_id ) {
+		$restore = get_current_blog_id() !== $blog_id;
+		if ( $restore ) {
+			switch_to_blog( $blog_id );
+		}
+
+		$post = get_post( $post_id );
+		$title = $post instanceof WP_Post ? sanitize_text_field( $post->post_title ) : '';
+
+		if ( $restore ) {
+			restore_current_blog();
+		}
+
+		return $title;
 	}
 
 	/**

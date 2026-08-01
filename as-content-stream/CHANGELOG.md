@@ -2,6 +2,12 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.33 - 2026-08-01
+
+- Renamed the visible Links tab to Streamed Content.
+- Added Source Title to Processing Queue, Log, and Streamed Content tables.
+- Reworked Processing Queue, Log, and Streamed Content column order for stronger continuity.
+
 ## 0.1.32 - 2026-08-01
 
 - Renamed visible admin references to Content Stream.
