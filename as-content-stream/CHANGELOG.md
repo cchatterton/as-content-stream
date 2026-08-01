@@ -2,6 +2,13 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.48 - 2026-08-01
+
+- Removed skipped as a current processing outcome.
+- Changed create processing so an existing live destination is mapped and completed instead of skipped.
+- Changed create processing so trashed destination matches are treated as unusable and a new destination can be created.
+- Re-queues legacy skipped processing rows on admin load so they can resolve under the current rules.
+
 ## 0.1.47 - 2026-08-01
 
 - Renamed the visible Streamed Content tab and Settings summary row to Streaming Map.

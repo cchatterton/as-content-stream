@@ -1,7 +1,7 @@
 # Content Stream
 
 Author: AlphaSys
-Version: 0.1.47
+Version: 0.1.48
 Status: POC
 
 ## Purpose
@@ -73,7 +73,7 @@ as-content-stream/
 - Future processors should clear queues in order: create, then update, then delete.
 - Target language defaults to the most common language across destination WPML sites until manually saved.
 - Automatic cron processing is toggled from the Heartbeat tile.
-- Processing Queue shows pending, in-progress, skipped, and failed per-site jobs with manual Run controls; Log shows completed processing jobs only.
+- Processing Queue shows pending, in-progress, blocked, and failed per-site jobs with manual Run controls; Log shows completed processing jobs only.
 - Log shows the latest 100 completed jobs and can be cleared from the Log tab.
 
 ## Future Considerations

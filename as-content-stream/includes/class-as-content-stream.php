@@ -118,6 +118,7 @@ class AS_Content_Stream {
 		add_action( 'admin_post_as_content_stream_delete_processing_job', array( $this, 'delete_processing_job' ) );
 		add_action( 'admin_post_as_content_stream_run_link', array( $this, 'run_link' ) );
 		add_action( 'admin_post_as_content_stream_test_tick', array( $this, 'run_test_tick' ) );
+		add_action( 'admin_init', array( $this, 'normalize_skipped_processing_jobs' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ) );
 		add_action( 'wp_ajax_as_content_stream_heartbeat', array( $this, 'ajax_heartbeat' ) );
 		add_action( self::CRON_HOOK, array( $this, 'process_tick' ) );
@@ -1449,7 +1450,7 @@ class AS_Content_Stream {
 		);
 
 		$result = $this->process_processing_job( $job );
-		$completed_at = in_array( $result['status'], array( 'complete', 'failed', 'skipped' ), true ) ? current_time( 'mysql', true ) : null;
+		$completed_at = in_array( $result['status'], array( 'complete', 'failed' ), true ) ? current_time( 'mysql', true ) : null;
 		$updated = $wpdb->update(
 			self::processing_queue_table_name(),
 			array(
@@ -1527,42 +1528,32 @@ class AS_Content_Stream {
 		}
 
 		if ( $legacy_id ) {
-			if ( 'trash' === get_post_status( $legacy_id ) ) {
+			if ( 'trash' !== get_post_status( $legacy_id ) ) {
+				$link_id = $this->upsert_link( $job, (int) $legacy_id, $payload );
+				if ( $link_id ) {
+					$this->set_processing_job_link_id( (int) $job->id, $link_id );
+				}
+
 				if ( $restore ) {
 					restore_current_blog();
 				}
-				return $this->processing_result( 'skipped', __( 'Legacy destination exists in trash; skipped discovery.', 'as-content-stream' ) );
+				return $this->processing_result( 'complete', sprintf( __( 'Existing destination mapped from legacy metadata. #%d', 'as-content-stream' ), (int) $legacy_id ) );
 			}
-
-			$link_id = $this->upsert_link( $job, (int) $legacy_id, $payload );
-			if ( $link_id ) {
-				$this->set_processing_job_link_id( (int) $job->id, $link_id );
-			}
-
-			if ( $restore ) {
-				restore_current_blog();
-			}
-			return $this->processing_result( 'complete', sprintf( __( 'Existing destination mapped from legacy metadata. #%d', 'as-content-stream' ), (int) $legacy_id ) );
 		}
 
 		$slug_id = $this->find_destination_post_id( $job, $payload );
 		if ( $slug_id ) {
-			if ( 'trash' === get_post_status( $slug_id ) ) {
+			if ( 'trash' !== get_post_status( $slug_id ) ) {
+				$link_id = $this->upsert_link( $job, (int) $slug_id, $payload );
+				if ( $link_id ) {
+					$this->set_processing_job_link_id( (int) $job->id, $link_id );
+				}
+
 				if ( $restore ) {
 					restore_current_blog();
 				}
-				return $this->processing_result( 'skipped', __( 'Slug-matched destination exists in trash; skipped discovery.', 'as-content-stream' ) );
+				return $this->processing_result( 'complete', sprintf( __( 'Existing destination mapped from slug. #%d', 'as-content-stream' ), (int) $slug_id ) );
 			}
-
-			$link_id = $this->upsert_link( $job, (int) $slug_id, $payload );
-			if ( $link_id ) {
-				$this->set_processing_job_link_id( (int) $job->id, $link_id );
-			}
-
-			if ( $restore ) {
-				restore_current_blog();
-			}
-			return $this->processing_result( 'complete', sprintf( __( 'Existing destination mapped from slug. #%d', 'as-content-stream' ), (int) $slug_id ) );
 		}
 
 		if ( $restore ) {
@@ -1677,21 +1668,28 @@ class AS_Content_Stream {
 			return $this->processing_result( 'failed', $site_result->get_error_message() );
 		}
 
+		$action = sanitize_key( $job->action );
 		$existing_id = $this->find_destination_post_id( $job, $payload );
 		if ( $existing_id && 'trash' === get_post_status( $existing_id ) ) {
-			if ( $restore ) {
-				restore_current_blog();
+			if ( 'create' === $action ) {
+				$existing_id = 0;
+			} else {
+				if ( $restore ) {
+					restore_current_blog();
+				}
+				return $this->processing_result( 'complete', __( 'Destination is in trash; no update applied.', 'as-content-stream' ) );
 			}
-			return $this->processing_result( 'skipped', __( 'Destination exists in trash; skipped.', 'as-content-stream' ) );
 		}
 
-		$existing_link = $existing_id && 'create' === sanitize_key( $job->action ) ? $this->get_link_for_source_target( $source_uuid, (int) $job->target_blog_id, sanitize_key( $job->target_language ) ) : null;
-		if ( $existing_id && $existing_link ) {
-			$this->set_processing_job_link_id( (int) $job->id, (int) $existing_link->id );
+		if ( $existing_id && 'create' === $action ) {
+			$link_id = $this->upsert_link( $job, (int) $existing_id, $payload );
+			if ( $link_id ) {
+				$this->set_processing_job_link_id( (int) $job->id, $link_id );
+			}
 			if ( $restore ) {
 				restore_current_blog();
 			}
-			return $this->processing_result( 'complete', __( 'Destination already mapped; skipped create.', 'as-content-stream' ) );
+			return $this->processing_result( 'complete', sprintf( __( 'Destination already exists; mapped existing destination. #%d', 'as-content-stream' ), (int) $existing_id ) );
 		}
 
 		$result_id = $this->copy_source_post_sql_to_destination( $job, (int) $author_id, (int) $existing_id );
@@ -1758,14 +1756,14 @@ class AS_Content_Stream {
 			if ( $restore ) {
 				restore_current_blog();
 			}
-			return $this->processing_result( 'skipped', __( 'Destination did not exist; skipped delete.', 'as-content-stream' ) );
+			return $this->processing_result( 'complete', __( 'Destination did not exist; no delete needed.', 'as-content-stream' ) );
 		}
 
 		if ( 'trash' === get_post_status( $existing_id ) ) {
 			if ( $restore ) {
 				restore_current_blog();
 			}
-			return $this->processing_result( 'skipped', __( 'Destination already in trash; skipped delete.', 'as-content-stream' ) );
+			return $this->processing_result( 'complete', __( 'Destination already in trash; no delete needed.', 'as-content-stream' ) );
 		}
 
 		$result = wp_trash_post( $existing_id );
@@ -3150,6 +3148,32 @@ class AS_Content_Stream {
 
 		wp_safe_redirect( $this->admin_url( array( 'tab' => 'discovery_queue', 'discovery_refreshed' => 1 ) ) );
 		exit;
+	}
+
+	/**
+	 * Re-queue legacy skipped processing rows so they can be resolved under current rules.
+	 *
+	 * @return void
+	 */
+	public function normalize_skipped_processing_jobs() {
+		if ( ! is_multisite() || ! is_main_site() || ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+
+		global $wpdb;
+		self::create_processing_queue_table();
+
+		$wpdb->update(
+			self::processing_queue_table_name(),
+			array(
+				'status'         => 'pending',
+				'completed_at'   => null,
+				'result_message' => __( 'Re-queued after skipped status was retired.', 'as-content-stream' ),
+			),
+			array( 'status' => 'skipped' ),
+			array( '%s', '%s', '%s' ),
+			array( '%s' )
+		);
 	}
 
 	/**
