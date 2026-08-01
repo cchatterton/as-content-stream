@@ -2,6 +2,10 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.44 - 2026-08-01
+
+- Rebuilt the Target Language tile with explicit body/action layout so Save Settings anchors to the bottom.
+
 ## 0.1.43 - 2026-08-01
 
 - Reworked the Settings tab panels into a more compact, polished admin layout.

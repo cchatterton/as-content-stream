@@ -36,6 +36,7 @@
 }
 
 .as-content-panel > form,
+.as-content-panel-form,
 .as-content-panel #as-content-heartbeat,
 .as-content-panel #as-content-heartbeat form {
 	display: flex;
@@ -43,8 +44,20 @@
 }
 
 .as-content-panel > form,
+.as-content-panel-form,
 .as-content-panel #as-content-heartbeat {
 	flex: 1;
+}
+
+.as-content-panel-body {
+	flex: 0 0 auto;
+}
+
+.as-content-panel-actions {
+	align-items: flex-end;
+	display: flex;
+	margin-top: auto;
+	padding-top: 16px;
 }
 
 .as-content-panel > form .submit,
@@ -56,6 +69,11 @@
 
 .as-content-panel .submit input {
 	align-self: flex-start;
+	min-width: 132px;
+	width: auto !important;
+}
+
+.as-content-panel-actions .button {
 	min-width: 132px;
 	width: auto !important;
 }

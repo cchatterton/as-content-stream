@@ -533,24 +533,28 @@ class AS_Content_Stream {
 		$this->ensure_stream_author_for_sites( $wpml_sites );
 		?>
 		<div class="as-content-grid as-content-settings-grid">
-			<div class="as-content-panel">
+			<div class="as-content-panel as-content-target-language-panel">
 				<h2><?php esc_html_e( 'Target Language', 'as-content-stream' ); ?></h2>
-				<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_save_settings' ) ); ?>">
+				<form class="as-content-panel-form" method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_save_settings' ) ); ?>">
 					<?php wp_nonce_field( self::NONCE_SETTINGS ); ?>
 					<input type="hidden" name="settings_context" value="target_language">
-					<label class="screen-reader-text" for="as-content-target-language"><?php esc_html_e( 'Target language', 'as-content-stream' ); ?></label>
-					<select id="as-content-target-language" class="as-content-select" name="target_language">
-						<?php if ( empty( $language_counts ) ) : ?>
-							<option value=""><?php esc_html_e( 'No destination languages available', 'as-content-stream' ); ?></option>
-						<?php else : ?>
-							<?php foreach ( $language_counts as $language => $count ) : ?>
-								<option value="<?php echo esc_attr( $language ); ?>" <?php selected( $target_language, $language ); ?>>
-									<?php echo esc_html( sprintf( '%s (%d)', $language, $count ) ); ?>
-								</option>
-							<?php endforeach; ?>
-						<?php endif; ?>
-					</select>
-					<?php submit_button( __( 'Save Settings', 'as-content-stream' ), 'primary', 'submit', false ); ?>
+					<div class="as-content-panel-body">
+						<label class="screen-reader-text" for="as-content-target-language"><?php esc_html_e( 'Target language', 'as-content-stream' ); ?></label>
+						<select id="as-content-target-language" class="as-content-select" name="target_language">
+							<?php if ( empty( $language_counts ) ) : ?>
+								<option value=""><?php esc_html_e( 'No destination languages available', 'as-content-stream' ); ?></option>
+							<?php else : ?>
+								<?php foreach ( $language_counts as $language => $count ) : ?>
+									<option value="<?php echo esc_attr( $language ); ?>" <?php selected( $target_language, $language ); ?>>
+										<?php echo esc_html( sprintf( '%s (%d)', $language, $count ) ); ?>
+									</option>
+								<?php endforeach; ?>
+							<?php endif; ?>
+						</select>
+					</div>
+					<div class="as-content-panel-actions">
+						<button type="submit" class="button button-primary"><?php esc_html_e( 'Save Settings', 'as-content-stream' ); ?></button>
+					</div>
 				</form>
 			</div>
 			<div class="as-content-panel">
