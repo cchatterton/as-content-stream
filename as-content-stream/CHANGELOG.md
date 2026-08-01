@@ -2,6 +2,12 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.45 - 2026-08-01
+
+- Matched the Target Language action button width with the other Settings tile actions.
+- Changed automatic processing so each cron tick adds at most one parent queue batch, then drains pending unblocked Processing Queue jobs.
+- Added AJAX updates to Network Status counts and refreshed Settings metrics every two seconds.
+
 ## 0.1.44 - 2026-08-01
 
 - Rebuilt the Target Language tile with explicit body/action layout so Save Settings anchors to the bottom.

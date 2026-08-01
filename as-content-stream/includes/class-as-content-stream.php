@@ -563,13 +563,13 @@ class AS_Content_Stream {
 					<tbody>
 						<tr><th scope="row"><?php esc_html_e( 'Sites', 'as-content-stream' ); ?></th><td><?php echo esc_html( count( $sites ) ); ?></td></tr>
 						<tr><th scope="row"><?php esc_html_e( 'WPML active sites', 'as-content-stream' ); ?></th><td><?php echo esc_html( count( $wpml_sites ) ); ?></td></tr>
-						<tr><th scope="row"><?php esc_html_e( 'Discovery Queue', 'as-content-stream' ); ?></th><td><?php echo esc_html( isset( $queue_action_counts['discover'] ) ? $queue_action_counts['discover'] : 0 ); ?></td></tr>
-						<tr><th scope="row"><?php esc_html_e( 'Create Queue', 'as-content-stream' ); ?></th><td><?php echo esc_html( isset( $queue_action_counts['create'] ) ? $queue_action_counts['create'] : 0 ); ?></td></tr>
-						<tr><th scope="row"><?php esc_html_e( 'Update Queue', 'as-content-stream' ); ?></th><td><?php echo esc_html( isset( $queue_action_counts['update'] ) ? $queue_action_counts['update'] : 0 ); ?></td></tr>
-						<tr><th scope="row"><?php esc_html_e( 'Delete Queue', 'as-content-stream' ); ?></th><td><?php echo esc_html( isset( $queue_action_counts['delete'] ) ? $queue_action_counts['delete'] : 0 ); ?></td></tr>
-						<tr><th scope="row"><?php esc_html_e( 'Processing Queue', 'as-content-stream' ); ?></th><td><?php echo esc_html( $processing_open_count ); ?></td></tr>
-						<tr><th scope="row"><?php esc_html_e( 'Streamed Content', 'as-content-stream' ); ?></th><td><?php echo esc_html( $streamed_count ); ?></td></tr>
-						<tr><th scope="row"><?php esc_html_e( 'Log', 'as-content-stream' ); ?></th><td><?php echo esc_html( $log_count ); ?></td></tr>
+						<tr><th scope="row"><?php esc_html_e( 'Discovery Queue', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_discovery"><?php echo esc_html( isset( $queue_action_counts['discover'] ) ? $queue_action_counts['discover'] : 0 ); ?></td></tr>
+						<tr><th scope="row"><?php esc_html_e( 'Create Queue', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_create"><?php echo esc_html( isset( $queue_action_counts['create'] ) ? $queue_action_counts['create'] : 0 ); ?></td></tr>
+						<tr><th scope="row"><?php esc_html_e( 'Update Queue', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_update"><?php echo esc_html( isset( $queue_action_counts['update'] ) ? $queue_action_counts['update'] : 0 ); ?></td></tr>
+						<tr><th scope="row"><?php esc_html_e( 'Delete Queue', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_delete"><?php echo esc_html( isset( $queue_action_counts['delete'] ) ? $queue_action_counts['delete'] : 0 ); ?></td></tr>
+						<tr><th scope="row"><?php esc_html_e( 'Processing Queue', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_processing"><?php echo esc_html( $processing_open_count ); ?></td></tr>
+						<tr><th scope="row"><?php esc_html_e( 'Streamed Content', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_streamed"><?php echo esc_html( $streamed_count ); ?></td></tr>
+						<tr><th scope="row"><?php esc_html_e( 'Log', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_log"><?php echo esc_html( $log_count ); ?></td></tr>
 					</tbody>
 				</table>
 				<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_rerun_discovery' ) ); ?>">
@@ -644,6 +644,13 @@ class AS_Content_Stream {
 							setText('parent_pending', status.parent_pending);
 							setText('child_queued', status.child_queued);
 							setText('child_blocked', status.child_blocked);
+							setText('status_discovery', status.status_discovery);
+							setText('status_create', status.status_create);
+							setText('status_update', status.status_update);
+							setText('status_delete', status.status_delete);
+							setText('status_processing', status.status_processing);
+							setText('status_streamed', status.status_streamed);
+							setText('status_log', status.status_log);
 							var parentBar = root.querySelector('[data-as-heartbeat-bar="parent"]');
 							if (parentBar) {
 								parentBar.style.width = status.parent_pressure_percent + '%';
@@ -655,7 +662,7 @@ class AS_Content_Stream {
 						})
 						.catch(function () {});
 				}
-				window.setInterval(refresh, 5000);
+				window.setInterval(refresh, 2000);
 			}());
 		</script>
 		<?php
@@ -1121,32 +1128,24 @@ class AS_Content_Stream {
 		$started = microtime( true );
 		$source_item = $this->get_next_source_queue_item();
 
-		if ( ! $source_item ) {
-			$this->store_telemetry(
-				array(
-					'phase'        => 'idle',
-					'batch_total'  => 0,
-					'batch_done'   => 0,
-					'last_message' => __( 'No source queue items are pending.', 'as-content-stream' ),
-					'last_batch_duration_ms' => $this->duration_ms( $started ),
-				)
-			);
-			return;
+		if ( $source_item ) {
+			$this->explode_source_queue_item( $source_item );
 		}
 
-		$this->explode_source_queue_item( $source_item );
-		$result = $this->process_processing_jobs( (int) $source_item->id, $job_limit );
-		$this->complete_source_queue_item_if_ready( (int) $source_item->id );
+		$result = $this->process_pending_processing_queue( $job_limit );
+		if ( $source_item ) {
+			$this->complete_source_queue_item_if_ready( (int) $source_item->id );
+		}
 
 		$this->store_telemetry(
 			array(
-				'phase'        => $source_item->action,
-				'current_source_id' => (int) $source_item->id,
+				'phase'        => $source_item ? $source_item->action : 'idle',
+				'current_source_id' => $source_item ? (int) $source_item->id : 0,
 				'batch_total'  => (int) $result['total'],
 				'batch_done'   => (int) $result['done'],
 				'last_message' => sprintf(
 					/* translators: 1: processed count, 2: total count. */
-					__( 'Processed %1$d of %2$d processing jobs.', 'as-content-stream' ),
+					__( 'Processed %1$d processing jobs; %2$d remain queued.', 'as-content-stream' ),
 					(int) $result['done'],
 					(int) $result['total']
 				),
@@ -1321,6 +1320,45 @@ class AS_Content_Stream {
 		return array(
 			'total' => $total,
 			'done'  => $done,
+		);
+	}
+
+	/**
+	 * Drain pending, unblocked processing jobs across the Processing Queue.
+	 *
+	 * @param int $limit Optional job limit. Zero means no limit.
+	 * @return array<string,int>
+	 */
+	private function process_pending_processing_queue( $limit = 0 ) {
+		global $wpdb;
+
+		$processed = 0;
+		$limit = absint( $limit );
+
+		while ( 0 === $limit || $processed < $limit ) {
+			$job = $wpdb->get_row(
+				'SELECT * FROM ' . self::processing_queue_table_name() . " WHERE status = 'pending' AND blocked_by = 0 ORDER BY priority DESC, parent_queue_id ASC, id ASC LIMIT 1"
+			);
+
+			if ( ! $job ) {
+				break;
+			}
+
+			if ( $this->process_processing_job_row( $job ) ) {
+				$processed++;
+				$this->complete_source_queue_item_if_ready( (int) $job->parent_queue_id );
+			} else {
+				break;
+			}
+		}
+
+		$remaining = (int) $wpdb->get_var(
+			"SELECT COUNT(*) FROM " . self::processing_queue_table_name() . " WHERE status = 'pending' AND blocked_by = 0"
+		);
+
+		return array(
+			'total' => $remaining,
+			'done'  => $processed,
 		);
 	}
 
@@ -4415,6 +4453,7 @@ class AS_Content_Stream {
 		$next = wp_next_scheduled( self::CRON_HOOK );
 		$queue_counts = $this->get_queue_counts();
 		$processing_counts = $this->get_processing_queue_counts();
+		$queue_action_counts = $this->get_queue_action_counts();
 		$current_source_id = isset( $telemetry['current_source_id'] ) ? (int) $telemetry['current_source_id'] : 0;
 		$parent_pending = isset( $queue_counts['pending'] ) ? (int) $queue_counts['pending'] : 0;
 		$parent_in_progress = isset( $queue_counts['in_progress'] ) ? (int) $queue_counts['in_progress'] : 0;
@@ -4440,6 +4479,13 @@ class AS_Content_Stream {
 			'last_message'           => isset( $telemetry['last_message'] ) ? (string) $telemetry['last_message'] : __( 'No processing runs yet.', 'as-content-stream' ),
 			'queue_counts'           => $queue_counts,
 			'processing_counts'      => $processing_counts,
+			'status_discovery'       => isset( $queue_action_counts['discover'] ) ? (int) $queue_action_counts['discover'] : 0,
+			'status_create'          => isset( $queue_action_counts['create'] ) ? (int) $queue_action_counts['create'] : 0,
+			'status_update'          => isset( $queue_action_counts['update'] ) ? (int) $queue_action_counts['update'] : 0,
+			'status_delete'          => isset( $queue_action_counts['delete'] ) ? (int) $queue_action_counts['delete'] : 0,
+			'status_processing'      => $this->get_processing_queue_open_count(),
+			'status_streamed'        => $this->get_streamed_content_count(),
+			'status_log'             => $this->get_processing_log_count(),
 		);
 	}
 

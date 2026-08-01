@@ -75,7 +75,7 @@
 
 .as-content-panel-actions .button {
 	min-width: 132px;
-	width: auto !important;
+	width: 100% !important;
 }
 
 .as-content-panel > form:last-child {

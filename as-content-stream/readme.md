@@ -1,7 +1,7 @@
 # Content Stream
 
 Author: AlphaSys
-Version: 0.1.44
+Version: 0.1.45
 Status: POC
 
 ## Purpose
