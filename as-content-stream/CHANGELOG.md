@@ -2,6 +2,13 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.83 - 2026-08-03
+
+- Queues Delete Queue work from active Streaming Map rows when a CPT is excluded.
+- Queues Delete Queue work from active Streaming Map rows when a destination site no longer has WPML active.
+- Allows delete processing to complete for out-of-scope post types and target sites so mapped destination content can be removed cleanly.
+- Preserves delete queue and processing rows while clearing other work for excluded post types.
+
 ## 0.1.82 - 2026-08-03
 
 - Adds an Include checkbox to CPT Settings.

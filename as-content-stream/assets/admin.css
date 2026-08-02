@@ -287,11 +287,29 @@
 	margin: 0 0 14px;
 }
 
+.as-content-site-tab {
+	align-items: center;
+	display: inline-flex;
+	gap: 6px;
+}
+
 .as-content-site-tab.is-active {
 	background: #fff;
 	border-color: #2271b1;
 	color: #1d2327;
 	font-weight: 600;
+}
+
+.as-content-site-dot {
+	background: #8c8f94;
+	border-radius: 50%;
+	display: inline-block;
+	height: 8px;
+	width: 8px;
+}
+
+.as-content-site-dot.is-active {
+	background: #008a20;
 }
 
 .as-content-site-sections {

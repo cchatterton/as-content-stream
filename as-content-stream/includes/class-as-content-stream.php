@@ -624,6 +624,7 @@ class AS_Content_Stream {
 		<div class="as-content-site-tabs" role="tablist" aria-label="<?php esc_attr_e( 'Sites', 'as-content-stream' ); ?>">
 			<?php foreach ( $sites as $index => $site ) : ?>
 				<button type="button" class="button button-secondary as-content-site-tab <?php echo 0 === (int) $index ? 'is-active' : ''; ?>" role="tab" aria-selected="<?php echo 0 === (int) $index ? 'true' : 'false'; ?>" aria-controls="as-content-site-<?php echo esc_attr( (int) $site['blog_id'] ); ?>" data-as-site-tab="<?php echo esc_attr( (int) $site['blog_id'] ); ?>">
+					<span class="as-content-site-dot <?php echo esc_attr( ! empty( $site['wpml_active'] ) ? 'is-active' : 'is-inactive' ); ?>" aria-hidden="true"></span>
 					<?php echo esc_html( sprintf( '#%d %s', (int) $site['blog_id'], $site['name'] ) ); ?>
 				</button>
 			<?php endforeach; ?>
@@ -641,7 +642,7 @@ class AS_Content_Stream {
 					<div class="as-content-site-heading">
 						<div>
 							<h2><?php echo esc_html( sprintf( '#%d %s', $blog_id, $site['name'] ) ); ?></h2>
-							<a href="<?php echo esc_url( $site['url'] ); ?>"><?php echo esc_html( $site['url'] ); ?></a>
+							<a href="<?php echo esc_url( $this->site_admin_url( $blog_id ) ); ?>"><?php echo esc_html( $this->site_admin_url( $blog_id ) ); ?></a>
 						</div>
 						<div class="as-content-site-meta">
 							<span>
@@ -1662,14 +1663,19 @@ class AS_Content_Stream {
 		$posted_include = isset( $_POST['post_type_include'] ) && is_array( $_POST['post_type_include'] ) ? wp_unslash( $_POST['post_type_include'] ) : array();
 		$settings = array();
 		$include_settings = array();
+		$excluded_post_types = array();
 		foreach ( $this->get_available_source_post_types() as $post_type ) {
 			$status = isset( $posted[ $post_type ] ) ? sanitize_key( $posted[ $post_type ] ) : $this->get_default_post_type_stream_status( $post_type );
 			$settings[ $post_type ] = in_array( $status, array( 'draft', 'publish' ), true ) ? $status : $this->get_default_post_type_stream_status( $post_type );
 			$include_settings[ $post_type ] = isset( $posted_include[ $post_type ] ) ? 1 : 0;
+			if ( empty( $include_settings[ $post_type ] ) ) {
+				$excluded_post_types[] = sanitize_key( $post_type );
+			}
 		}
 
 		update_site_option( self::OPTION_POST_TYPE_STATUS, $settings );
 		update_site_option( self::OPTION_POST_TYPE_INCLUDE, $include_settings );
+		$this->enqueue_delete_jobs_for_active_map_rows( $excluded_post_types );
 		$this->clear_excluded_post_type_work();
 		$this->reconcile_current_streaming_map_rows();
 		$this->refresh_site_health_snapshots();
@@ -1976,6 +1982,18 @@ class AS_Content_Stream {
 		$language_counts = $this->get_language_counts( $this->discover_sites() );
 		$target_language = $this->get_effective_target_language( $language_counts );
 		$targets = $this->get_processing_targets( $target_language );
+		$source_action = sanitize_key( $source_item->action );
+		if ( 'delete' === $source_action && ! empty( $source_item->target_blog_id ) ) {
+			$queued_target_language = sanitize_key( $source_item->target_language );
+			if ( '' !== $queued_target_language ) {
+				$target_language = $queued_target_language;
+			}
+			$targets = array(
+				array(
+					'blog_id' => (int) $source_item->target_blog_id,
+				),
+			);
+		}
 
 		$wpdb->update(
 			self::queue_table_name(),
@@ -2015,7 +2033,7 @@ class AS_Content_Stream {
 			if ( ! empty( $payload['source_uuid'] ) ) {
 				$link = $this->get_link_for_source_target( sanitize_text_field( $payload['source_uuid'] ), (int) $target['blog_id'], sanitize_key( $target_language ) );
 				$link_id = $link ? (int) $link->id : 0;
-				if ( 'discover' === sanitize_key( $source_item->action ) && $link_id && 'active' === sanitize_key( $link->status ) ) {
+				if ( 'discover' === $source_action && $link_id && 'active' === sanitize_key( $link->status ) ) {
 					continue;
 				}
 			}
@@ -2026,7 +2044,7 @@ class AS_Content_Stream {
 					'created_at'      => current_time( 'mysql', true ),
 					'parent_queue_id' => (int) $source_item->id,
 					'link_id'         => $link_id,
-					'action'          => sanitize_key( $source_item->action ),
+					'action'          => $source_action,
 					'status'          => 'pending',
 					'source_blog_id'  => (int) $source_item->source_blog_id,
 					'source_post_id'  => (int) $source_item->source_post_id,
@@ -2195,12 +2213,12 @@ class AS_Content_Stream {
 		$action = sanitize_key( $job->action );
 		$post_type = sanitize_key( $job->post_type );
 
-		if ( ! $this->is_included_post_type( $post_type ) ) {
-			return $this->processing_result( 'complete', __( 'Post type is not included in Content Stream.', 'as-content-stream' ) );
-		}
-
 		if ( 'delete' === $action ) {
 			return $this->process_delete_job( $job );
+		}
+
+		if ( ! $this->is_included_post_type( $post_type ) ) {
+			return $this->processing_result( 'complete', __( 'Post type is not included in Content Stream.', 'as-content-stream' ) );
 		}
 
 		if ( 'discover' === $action ) {
@@ -4291,34 +4309,154 @@ class AS_Content_Stream {
 		if ( empty( $post_types ) ) {
 			$wpdb->query(
 				$wpdb->prepare(
-					'DELETE FROM ' . self::queue_table_name() . ' WHERE status <> %s',
-					'complete'
+					'DELETE FROM ' . self::queue_table_name() . ' WHERE status <> %s AND action <> %s',
+					'complete',
+					'delete'
 				)
 			);
 			$wpdb->query(
 				$wpdb->prepare(
-					'DELETE FROM ' . self::processing_queue_table_name() . ' WHERE status <> %s',
-					'complete'
+					'DELETE FROM ' . self::processing_queue_table_name() . ' WHERE status <> %s AND action <> %s',
+					'complete',
+					'delete'
 				)
 			);
 			return;
 		}
 
 		$placeholders = implode( ',', array_fill( 0, count( $post_types ), '%s' ) );
-		$queue_args = array_merge( array( 'complete' ), $post_types );
+		$queue_args = array_merge( array( 'complete', 'delete' ), $post_types );
 		$wpdb->query(
 			$wpdb->prepare(
-				'DELETE FROM ' . self::queue_table_name() . " WHERE status <> %s AND post_type NOT IN ({$placeholders})",
+				'DELETE FROM ' . self::queue_table_name() . " WHERE status <> %s AND action <> %s AND post_type NOT IN ({$placeholders})",
 				$queue_args
 			)
 		);
-		$processing_args = array_merge( array( 'complete' ), $post_types );
+		$processing_args = array_merge( array( 'complete', 'delete' ), $post_types );
 		$wpdb->query(
 			$wpdb->prepare(
-				'DELETE FROM ' . self::processing_queue_table_name() . " WHERE status <> %s AND post_type NOT IN ({$placeholders})",
+				'DELETE FROM ' . self::processing_queue_table_name() . " WHERE status <> %s AND action <> %s AND post_type NOT IN ({$placeholders})",
 				$processing_args
 			)
 		);
+	}
+
+	/**
+	 * Queue delete work for active Streaming Map rows in the supplied post types.
+	 *
+	 * @param string[] $post_types Post types to remove from destinations.
+	 * @return void
+	 */
+	private function enqueue_delete_jobs_for_active_map_rows( $post_types ) {
+		global $wpdb;
+
+		$post_types = array_values( array_unique( array_filter( array_map( 'sanitize_key', (array) $post_types ) ) ) );
+		if ( empty( $post_types ) ) {
+			return;
+		}
+
+		self::create_links_table();
+
+		$placeholders = implode( ',', array_fill( 0, count( $post_types ), '%s' ) );
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				'SELECT * FROM ' . self::links_table_name() . " WHERE status = %s AND source_post_type IN ({$placeholders})",
+				array_merge( array( 'active' ), $post_types )
+			)
+		);
+
+		$this->enqueue_delete_jobs_for_map_rows( $rows );
+	}
+
+	/**
+	 * Queue delete work for mapped destination rows.
+	 *
+	 * @param array<int,object> $rows Streaming Map rows.
+	 * @return void
+	 */
+	private function enqueue_delete_jobs_for_map_rows( $rows ) {
+		foreach ( (array) $rows as $row ) {
+			if ( empty( $row->source_post_id ) || empty( $row->target_blog_id ) || empty( $row->target_language ) ) {
+				continue;
+			}
+
+			$post_type = sanitize_key( $row->source_post_type );
+			if ( 'attachment' === $post_type ) {
+				continue;
+			}
+
+			if ( $this->source_target_queue_action_exists( (int) $row->source_blog_id, (int) $row->source_post_id, $post_type, 'delete', (int) $row->target_blog_id ) ) {
+				continue;
+			}
+
+			$payload = $this->get_source_payload_for_map_row( $row );
+			$payload['source_uuid'] = sanitize_text_field( $row->source_uuid );
+			$payload['target_post_id'] = (int) $row->target_post_id;
+			$payload['target_language'] = sanitize_key( $row->target_language );
+
+			$this->insert_queue_item(
+				array(
+					'action'          => 'delete',
+					'source_blog_id'  => (int) $row->source_blog_id,
+					'source_post_id'  => (int) $row->source_post_id,
+					'target_blog_id'  => (int) $row->target_blog_id,
+					'target_language' => sanitize_key( $row->target_language ),
+					'post_type'       => $post_type,
+					'payload'         => $payload,
+				)
+			);
+		}
+	}
+
+	/**
+	 * Build a source payload for a Streaming Map row.
+	 *
+	 * @param object $row Streaming Map row.
+	 * @return array<string,mixed>
+	 */
+	private function get_source_payload_for_map_row( $row ) {
+		global $wpdb;
+
+		$post_type = sanitize_key( $row->source_post_type );
+		$slug = isset( $row->source_slug ) ? sanitize_title( $row->source_slug ) : '';
+		$payload = array(
+			'post_title'         => $slug ? $slug : sprintf( 'Post #%d', (int) $row->source_post_id ),
+			'post_status'        => 'publish',
+			'post_name'          => $slug,
+			'post_date'          => current_time( 'mysql' ),
+			'post_date_gmt'      => current_time( 'mysql', true ),
+			'post_modified'      => current_time( 'mysql' ),
+			'post_modified_gmt'  => current_time( 'mysql', true ),
+			'original_post_name' => $slug,
+		);
+
+		$table = $wpdb->get_blog_prefix( (int) $row->source_blog_id ) . 'posts';
+		$post = $wpdb->get_row(
+			$wpdb->prepare(
+				"SELECT post_title, post_status, post_name, post_date, post_date_gmt, post_modified, post_modified_gmt FROM {$table} WHERE ID = %d AND post_type = %s LIMIT 1",
+				(int) $row->source_post_id,
+				$post_type
+			),
+			ARRAY_A
+		);
+
+		if ( $post ) {
+			$payload = array_merge(
+				$payload,
+				array(
+					'post_title'         => $post['post_title'],
+					'post_status'        => $post['post_status'],
+					'post_name'          => $post['post_name'],
+					'post_date'          => $post['post_date'],
+					'post_date_gmt'      => $post['post_date_gmt'],
+					'post_modified'      => $post['post_modified'],
+					'post_modified_gmt'  => $post['post_modified_gmt'],
+					'original_post_name' => $post['post_name'],
+				)
+			);
+		}
+
+		return $payload;
 	}
 
 	/**
@@ -4646,6 +4784,14 @@ class AS_Content_Stream {
 		);
 
 		if ( empty( $post_types ) || empty( $target_ids ) || '' === $target_language ) {
+			$rows_to_remove = $wpdb->get_results(
+				$wpdb->prepare(
+					"SELECT * FROM {$links_table} WHERE status = %s",
+					'active'
+				)
+			);
+			$this->enqueue_delete_jobs_for_map_rows( $rows_to_remove );
+
 			$wpdb->query(
 				$wpdb->prepare(
 					"UPDATE {$links_table} SET updated_at = %s, status = %s WHERE status = %s",
@@ -4659,6 +4805,27 @@ class AS_Content_Stream {
 
 		$post_type_placeholders = implode( ',', array_fill( 0, count( $post_types ), '%s' ) );
 		$target_placeholders = implode( ',', array_fill( 0, count( $target_ids ), '%d' ) );
+		$removal_sql = "SELECT l.* FROM {$links_table} l
+			LEFT JOIN {$posts_table} p
+				ON p.ID = l.source_post_id
+				AND p.post_status = %s
+				AND p.post_type IN ({$post_type_placeholders})
+			WHERE l.status = %s
+				AND (
+					l.source_blog_id <> %d
+					OR p.ID IS NULL
+					OR l.target_language <> %s
+					OR l.target_blog_id NOT IN ({$target_placeholders})
+				)";
+		$removal_args = array_merge(
+			array( 'publish' ),
+			$post_types,
+			array( 'active', get_main_site_id(), sanitize_key( $target_language ) ),
+			$target_ids
+		);
+		$rows_to_remove = $wpdb->get_results( $wpdb->prepare( $removal_sql, $removal_args ) );
+		$this->enqueue_delete_jobs_for_map_rows( $rows_to_remove );
+
 		$wpdb->query(
 			$wpdb->prepare(
 				"UPDATE {$links_table} l
@@ -4710,6 +4877,15 @@ class AS_Content_Stream {
 		if ( empty( $inactive_ids ) ) {
 			return;
 		}
+
+		$placeholders = implode( ',', array_fill( 0, count( $inactive_ids ), '%d' ) );
+		$rows_to_remove = $wpdb->get_results(
+			$wpdb->prepare(
+				'SELECT * FROM ' . self::links_table_name() . " WHERE status = %s AND target_blog_id IN ({$placeholders})",
+				array_merge( array( 'active' ), $inactive_ids )
+			)
+		);
+		$this->enqueue_delete_jobs_for_map_rows( $rows_to_remove );
 
 		$placeholders = implode( ',', array_fill( 0, count( $inactive_ids ), '%d' ) );
 		$query_args = array_merge( array( current_time( 'mysql', true ), 'inactive_wpml', 'active' ), $inactive_ids );
@@ -6482,6 +6658,32 @@ class AS_Content_Stream {
 				$source_post_id,
 				sanitize_key( $action ),
 				sanitize_key( $post_type )
+			)
+		);
+	}
+
+	/**
+	 * Check whether a non-complete queue action already exists for a specific destination.
+	 *
+	 * @param int    $source_blog_id Source blog ID.
+	 * @param int    $source_post_id Source post ID.
+	 * @param string $post_type Post type.
+	 * @param string $action Action.
+	 * @param int    $target_blog_id Target blog ID.
+	 * @return bool
+	 */
+	private function source_target_queue_action_exists( $source_blog_id, $source_post_id, $post_type, $action, $target_blog_id ) {
+		global $wpdb;
+
+		return (bool) $wpdb->get_var(
+			$wpdb->prepare(
+				'SELECT id FROM ' . self::queue_table_name() . ' WHERE status <> %s AND source_blog_id = %d AND source_post_id = %d AND action = %s AND post_type = %s AND target_blog_id = %d LIMIT 1',
+				'complete',
+				$source_blog_id,
+				$source_post_id,
+				sanitize_key( $action ),
+				sanitize_key( $post_type ),
+				$target_blog_id
 			)
 		);
 	}
