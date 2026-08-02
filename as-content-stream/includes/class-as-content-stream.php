@@ -597,11 +597,11 @@ class AS_Content_Stream {
 					</div>
 					<div class="as-content-gauge">
 						<div class="as-content-gauge-meta">
-							<span><?php esc_html_e( 'Queued / Blocked', 'as-content-stream' ); ?></span>
-							<strong><span data-as-heartbeat="child_queued"><?php echo esc_html( $heartbeat['child_queued'] ); ?></span> / <span data-as-heartbeat="child_blocked"><?php echo esc_html( $heartbeat['child_blocked'] ); ?></span></strong>
+							<span><?php esc_html_e( 'Queued / Blocked / Failed', 'as-content-stream' ); ?></span>
+							<strong><span data-as-heartbeat="child_queued"><?php echo esc_html( $heartbeat['child_queued'] ); ?></span> / <span data-as-heartbeat="child_blocked"><?php echo esc_html( $heartbeat['child_blocked'] ); ?></span> / <span data-as-heartbeat="child_failed"><?php echo esc_html( $heartbeat['child_failed'] ); ?></span></strong>
 						</div>
 						<div class="as-content-progress as-content-progress-danger" aria-hidden="true">
-							<span data-as-heartbeat-bar="child" style="width: <?php echo esc_attr( $heartbeat['child_blocked_percent'] ); ?>%;"></span>
+							<span data-as-heartbeat-bar="child" style="width: <?php echo esc_attr( $heartbeat['child_obstructed_percent'] ); ?>%;"></span>
 						</div>
 					</div>
 					<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_save_settings' ) ); ?>">
@@ -687,6 +687,7 @@ class AS_Content_Stream {
 							setText('parent_pending', status.parent_pending);
 							setText('child_queued', status.child_queued);
 							setText('child_blocked', status.child_blocked);
+							setText('child_failed', status.child_failed);
 							setText('status_discovery', status.status_discovery);
 							setText('status_create', status.status_create);
 							setText('status_update', status.status_update);
@@ -703,7 +704,7 @@ class AS_Content_Stream {
 							}
 							var childBar = root.querySelector('[data-as-heartbeat-bar="child"]');
 							if (childBar) {
-								childBar.style.width = status.child_blocked_percent + '%';
+								childBar.style.width = status.child_obstructed_percent + '%';
 							}
 						})
 						.catch(function () {});
@@ -4546,8 +4547,10 @@ class AS_Content_Stream {
 		$child_pending = isset( $processing_counts['pending'] ) ? (int) $processing_counts['pending'] : 0;
 		$child_in_progress = isset( $processing_counts['in_progress'] ) ? (int) $processing_counts['in_progress'] : 0;
 		$child_blocked = isset( $processing_counts['blocked'] ) ? (int) $processing_counts['blocked'] : 0;
+		$child_failed = isset( $processing_counts['failed'] ) ? (int) $processing_counts['failed'] : 0;
 		$child_queued = $child_pending + $child_in_progress;
-		$child_total = $child_queued + $child_blocked;
+		$child_obstructed = $child_blocked + $child_failed;
+		$child_total = $child_queued + $child_obstructed;
 
 		return array(
 			'enabled'                => $enabled,
@@ -4559,7 +4562,8 @@ class AS_Content_Stream {
 			'parent_pressure_percent' => $parent_total > 0 ? min( 100, round( ( $parent_in_progress / $parent_total ) * 100 ) ) : 0,
 			'child_queued'           => $child_queued,
 			'child_blocked'          => $child_blocked,
-			'child_blocked_percent'  => $child_total > 0 ? min( 100, round( ( $child_blocked / $child_total ) * 100 ) ) : 0,
+			'child_failed'           => $child_failed,
+			'child_obstructed_percent' => $child_total > 0 ? min( 100, round( ( $child_obstructed / $child_total ) * 100 ) ) : 0,
 			'last_batch_duration_ms' => isset( $telemetry['last_batch_duration_ms'] ) ? (int) $telemetry['last_batch_duration_ms'] : 0,
 			'last_message'           => isset( $telemetry['last_message'] ) ? (string) $telemetry['last_message'] : __( 'No processing runs yet.', 'as-content-stream' ),
 			'queue_counts'           => $queue_counts,

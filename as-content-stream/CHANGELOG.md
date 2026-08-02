@@ -2,6 +2,11 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.49 - 2026-08-02
+
+- Changed the Heartbeat processing gauge to show Queued / Blocked / Failed counts.
+- Counts blocked and failed processing jobs together for the red pressure bar so failed blockers are visible from Settings.
+
 ## 0.1.48 - 2026-08-01
 
 - Removed skipped as a current processing outcome.
