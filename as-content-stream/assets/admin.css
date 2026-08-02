@@ -276,11 +276,22 @@
 	vertical-align: top;
 }
 
-.as-content-site-jump-links {
+.as-content-discovery-last-run {
+	margin: 0 0 12px;
+}
+
+.as-content-site-tabs {
 	display: flex;
 	flex-wrap: wrap;
 	gap: 8px;
 	margin: 0 0 14px;
+}
+
+.as-content-site-tab.is-active {
+	background: #fff;
+	border-color: #2271b1;
+	color: #1d2327;
+	font-weight: 600;
 }
 
 .as-content-site-sections {
@@ -289,7 +300,12 @@
 }
 
 .as-content-site-section {
+	display: none;
 	scroll-margin-top: 36px;
+}
+
+.as-content-site-section.is-active {
+	display: block;
 }
 
 .as-content-site-heading {
@@ -331,6 +347,18 @@
 .as-content-sites th:first-child,
 .as-content-sites td:first-child {
 	white-space: normal;
+}
+
+.as-content-row-status {
+	font-weight: 600;
+}
+
+.as-content-row-status-aligned {
+	color: #008a20;
+}
+
+.as-content-row-status-inactive {
+	color: #8c8f94;
 }
 
 .as-content-discovery-stats {

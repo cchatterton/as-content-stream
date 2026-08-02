@@ -2,6 +2,15 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.79 - 2026-08-03
+
+- Renames Sites & WPML Missing to In Discovery and ties it to open Discovery or processing work.
+- Renames destination cleanup counts to Local Content.
+- Renames mapped destination counts to Mapped As Configured and Mapped Off Config.
+- Adds Discovery Last Run to Sites & WPML.
+- Styles Aligned row statuses in the success green.
+- Changes Sites & WPML site navigation from jump links to internal tabs.
+
 ## 0.1.78 - 2026-08-03
 
 - Reworks Sites & WPML into per-site sections with per-CPT reconciliation tables.
