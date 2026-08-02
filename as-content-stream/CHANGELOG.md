@@ -2,6 +2,12 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.63 - 2026-08-02
+
+- Stops writing featured-image attachment relationships into the Streaming Map.
+- Reconciles existing attachment and stale active rows out of the active Streaming Map.
+- Counts and lists Streaming Map rows only for current published source content, current target language, and active WPML destinations.
+
 ## 0.1.62 - 2026-08-02
 
 - Splits the Heartbeat queue bars into a lightweight half-second AJAX pulse so those two bars update together.

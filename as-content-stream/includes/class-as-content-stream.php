@@ -2408,7 +2408,6 @@ class AS_Content_Stream {
 		$this->copy_attachment_derivative_files( $source_blog_id, $source_attachment_id, $target_blog_id, $source_file, $destination_file );
 		$this->replace_postmeta_sql( $target_blog_id, $destination_attachment_id, '_wp_attached_file', $this->relative_upload_path( $target_blog_id, $destination_file ) );
 		$this->replace_attachment_metadata_file_path( $source_blog_id, $source_attachment_id, $target_blog_id, $destination_attachment_id, $destination_file );
-		$this->upsert_attachment_link( $source_blog_id, $source_attachment_id, $target_blog_id, $destination_attachment_id, $target_language, $source_uuid );
 		clean_post_cache( $destination_attachment_id );
 
 		return $destination_attachment_id;
@@ -2548,37 +2547,6 @@ class AS_Content_Stream {
 		}
 
 		return $url;
-	}
-
-	/**
-	 * Store a links-table row for a copied attachment.
-	 *
-	 * @param int    $source_blog_id Source blog ID.
-	 * @param int    $source_attachment_id Source attachment ID.
-	 * @param int    $target_blog_id Target blog ID.
-	 * @param int    $destination_attachment_id Destination attachment ID.
-	 * @param string $target_language Target language.
-	 * @param string $source_uuid Source UUID.
-	 * @return void
-	 */
-	private function upsert_attachment_link( $source_blog_id, $source_attachment_id, $target_blog_id, $destination_attachment_id, $target_language, $source_uuid ) {
-		$job = (object) array(
-			'id'                => 0,
-			'parent_queue_id'   => 0,
-			'action'            => 'media',
-			'source_blog_id'    => $source_blog_id,
-			'source_post_id'    => $source_attachment_id,
-			'target_blog_id'    => $target_blog_id,
-			'target_language'   => $target_language,
-			'post_type'         => 'attachment',
-		);
-		$payload = array(
-			'source_uuid'        => $source_uuid,
-			'post_name'          => $this->get_post_slug_from_site( $source_blog_id, $source_attachment_id ),
-			'original_post_name' => $this->get_post_slug_from_site( $source_blog_id, $source_attachment_id ),
-		);
-
-		$this->upsert_link( $job, $destination_attachment_id, $payload );
 	}
 
 	/**
@@ -2935,7 +2903,7 @@ class AS_Content_Stream {
 			'target_post_id'          => $destination_post_id,
 			'target_language'         => sanitize_key( $job->target_language ),
 			'target_slug'             => $target_slug,
-			'status'                  => 'active',
+			'status'                  => 'attachment' === sanitize_key( $job->post_type ) ? 'media' : 'active',
 			'last_action'             => sanitize_key( $job->action ),
 			'last_queue_id'           => (int) $job->parent_queue_id,
 			'last_processing_job_id'  => (int) $job->id,
@@ -3054,23 +3022,55 @@ class AS_Content_Stream {
 
 		self::create_links_table();
 
+		$post_types = $this->get_discoverable_source_post_types();
+		$targets = $this->get_discovery_targets();
+		$target_ids = array_map(
+			static function ( $target ) {
+				return (int) $target['blog_id'];
+			},
+			$targets
+		);
+		$language_counts = $this->get_language_counts( $this->discover_sites() );
+		$target_language = $this->get_effective_target_language( $language_counts );
+
+		if ( empty( $post_types ) || empty( $target_ids ) || '' === $target_language ) {
+			return array();
+		}
+
+		$links_table = self::links_table_name();
+		$posts_table = $wpdb->get_blog_prefix( get_main_site_id() ) . 'posts';
+		$post_type_placeholders = implode( ',', array_fill( 0, count( $post_types ), '%s' ) );
+		$target_placeholders = implode( ',', array_fill( 0, count( $target_ids ), '%d' ) );
+		$sql = "SELECT l.* FROM {$links_table} l
+			INNER JOIN {$posts_table} p
+				ON p.ID = l.source_post_id
+				AND p.post_status = %s
+				AND p.post_type IN ({$post_type_placeholders})
+			WHERE l.status = %s
+				AND l.source_blog_id = %d
+				AND l.target_language = %s
+				AND l.target_blog_id IN ({$target_placeholders})";
+		$args = array_merge(
+			array( 'publish' ),
+			$post_types,
+			array( 'active', get_main_site_id(), sanitize_key( $target_language ) ),
+			$target_ids
+		);
+
 		if ( $lookup_id ) {
+			$sql .= ' AND (l.source_post_id = %d OR l.target_post_id = %d)';
+			$args[] = $lookup_id;
+			$args[] = $lookup_id;
+			$sql .= ' ORDER BY l.updated_at DESC';
+
 			return $wpdb->get_results(
-				$wpdb->prepare(
-					'SELECT * FROM ' . self::links_table_name() . ' WHERE status = %s AND (source_post_id = %d OR target_post_id = %d) ORDER BY updated_at DESC',
-					'active',
-					$lookup_id,
-					$lookup_id
-				)
+				$wpdb->prepare( $sql, $args )
 			);
 		}
 
-		return $wpdb->get_results(
-			$wpdb->prepare(
-				'SELECT * FROM ' . self::links_table_name() . ' WHERE status = %s ORDER BY updated_at DESC',
-				'active'
-			)
-		);
+		$sql .= ' ORDER BY l.updated_at DESC';
+
+		return $wpdb->get_results( $wpdb->prepare( $sql, $args ) );
 	}
 
 	/**
@@ -3443,6 +3443,90 @@ class AS_Content_Stream {
 					newer.updated_at > older.updated_at
 					OR (newer.updated_at = older.updated_at AND newer.id > older.id)
 			)"
+		);
+		$wpdb->query(
+			"DELETE older FROM {$table} older
+			INNER JOIN {$table} newer
+				ON newer.source_uuid = older.source_uuid
+				AND newer.target_blog_id = older.target_blog_id
+				AND newer.target_language = older.target_language
+				AND (
+					newer.updated_at > older.updated_at
+					OR (newer.updated_at = older.updated_at AND newer.id > older.id)
+			)"
+		);
+
+		$this->reconcile_current_streaming_map_rows();
+	}
+
+	/**
+	 * Mark stale active Streaming Map rows as inactive.
+	 *
+	 * @return void
+	 */
+	private function reconcile_current_streaming_map_rows() {
+		global $wpdb;
+
+		$post_types = $this->get_discoverable_source_post_types();
+		$targets = $this->get_discovery_targets();
+		$target_ids = array_map(
+			static function ( $target ) {
+				return (int) $target['blog_id'];
+			},
+			$targets
+		);
+		$language_counts = $this->get_language_counts( $this->discover_sites() );
+		$target_language = $this->get_effective_target_language( $language_counts );
+		$links_table = self::links_table_name();
+		$posts_table = $wpdb->get_blog_prefix( get_main_site_id() ) . 'posts';
+		$now = current_time( 'mysql', true );
+
+		$wpdb->query(
+			$wpdb->prepare(
+				"UPDATE {$links_table} SET updated_at = %s, status = %s WHERE status = %s AND source_post_type = %s",
+				$now,
+				'media',
+				'active',
+				'attachment'
+			)
+		);
+
+		if ( empty( $post_types ) || empty( $target_ids ) || '' === $target_language ) {
+			$wpdb->query(
+				$wpdb->prepare(
+					"UPDATE {$links_table} SET updated_at = %s, status = %s WHERE status = %s",
+					$now,
+					'inactive',
+					'active'
+				)
+			);
+			return;
+		}
+
+		$post_type_placeholders = implode( ',', array_fill( 0, count( $post_types ), '%s' ) );
+		$target_placeholders = implode( ',', array_fill( 0, count( $target_ids ), '%d' ) );
+		$wpdb->query(
+			$wpdb->prepare(
+				"UPDATE {$links_table} l
+				LEFT JOIN {$posts_table} p
+					ON p.ID = l.source_post_id
+					AND p.post_status = %s
+					AND p.post_type IN ({$post_type_placeholders})
+				SET l.updated_at = %s, l.status = %s
+				WHERE l.status = %s
+					AND (
+						l.source_blog_id <> %d
+						OR p.ID IS NULL
+						OR l.target_language <> %s
+						OR l.target_blog_id NOT IN ({$target_placeholders})
+					)",
+				array_merge(
+					array( 'publish' ),
+					$post_types,
+					array( $now, 'inactive', 'active', get_main_site_id(), sanitize_key( $target_language ) ),
+					$target_ids
+				)
+			)
 		);
 	}
 
@@ -4943,10 +5027,44 @@ class AS_Content_Stream {
 
 		self::create_links_table();
 
+		$post_types = $this->get_discoverable_source_post_types();
+		$targets = $this->get_discovery_targets();
+		$target_ids = array_map(
+			static function ( $target ) {
+				return (int) $target['blog_id'];
+			},
+			$targets
+		);
+		$language_counts = $this->get_language_counts( $this->discover_sites() );
+		$target_language = $this->get_effective_target_language( $language_counts );
+
+		if ( empty( $post_types ) || empty( $target_ids ) || '' === $target_language ) {
+			return 0;
+		}
+
+		$links_table = self::links_table_name();
+		$posts_table = $wpdb->get_blog_prefix( get_main_site_id() ) . 'posts';
+		$post_type_placeholders = implode( ',', array_fill( 0, count( $post_types ), '%s' ) );
+		$target_placeholders = implode( ',', array_fill( 0, count( $target_ids ), '%d' ) );
+		$args = array_merge(
+			array( 'publish' ),
+			$post_types,
+			array( 'active', get_main_site_id(), sanitize_key( $target_language ) ),
+			$target_ids
+		);
+
 		return (int) $wpdb->get_var(
 			$wpdb->prepare(
-				'SELECT COUNT(*) FROM ' . self::links_table_name() . ' WHERE status = %s',
-				'active'
+				"SELECT COUNT(*) FROM {$links_table} l
+				INNER JOIN {$posts_table} p
+					ON p.ID = l.source_post_id
+					AND p.post_status = %s
+					AND p.post_type IN ({$post_type_placeholders})
+				WHERE l.status = %s
+					AND l.source_blog_id = %d
+					AND l.target_language = %s
+					AND l.target_blog_id IN ({$target_placeholders})",
+				$args
 			)
 		);
 	}
