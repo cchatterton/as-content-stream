@@ -2,6 +2,11 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.67 - 2026-08-02
+
+- Makes Processing Queue a live AJAX view so jobs appear, update, and leave while the tab is open.
+- Makes Discovery, Create, Update, and Delete queues live AJAX views while preserving background lazy loading.
+
 ## 0.1.66 - 2026-08-02
 
 - Removes the Discovery post-type summary table and Discovery-tab Re-run button.

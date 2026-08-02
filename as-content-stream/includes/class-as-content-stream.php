@@ -783,7 +783,7 @@ class AS_Content_Stream {
 		$snapshot_id = $this->get_queue_snapshot_id( $action );
 		$items  = $this->get_queue_items( $action, $limit, 0, $snapshot_id );
 		?>
-		<table class="widefat striped as-content-queue" data-as-lazy-table="queue" data-as-action="<?php echo esc_attr( sanitize_key( $action ) ); ?>" data-as-offset="<?php echo esc_attr( count( $items ) ); ?>" data-as-limit="<?php echo esc_attr( $limit ); ?>" data-as-snapshot-id="<?php echo esc_attr( $snapshot_id ); ?>">
+		<table class="widefat striped as-content-queue" data-as-lazy-table="queue" data-as-live-table="queue" data-as-action="<?php echo esc_attr( sanitize_key( $action ) ); ?>" data-as-offset="<?php echo esc_attr( count( $items ) ); ?>" data-as-limit="<?php echo esc_attr( $limit ); ?>" data-as-snapshot-id="<?php echo esc_attr( $snapshot_id ); ?>" data-as-empty-message="<?php esc_attr_e( 'No queue items yet.', 'as-content-stream' ); ?>" data-as-empty-colspan="9">
 			<thead>
 				<tr>
 					<th><?php esc_html_e( 'Job', 'as-content-stream' ); ?></th>
@@ -799,7 +799,7 @@ class AS_Content_Stream {
 			</thead>
 			<tbody>
 				<?php if ( empty( $items ) ) : ?>
-					<tr><td colspan="9"><?php esc_html_e( 'No queue items yet.', 'as-content-stream' ); ?></td></tr>
+					<tr class="as-content-empty-row"><td colspan="9"><?php esc_html_e( 'No queue items yet.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
 				<?php $this->render_queue_item_rows( $items ); ?>
 			</tbody>
@@ -827,7 +827,7 @@ class AS_Content_Stream {
 		$snapshot_id = $this->get_processing_queue_snapshot_id( false );
 		$items = $this->get_processing_queue_items( false, 0, $limit, 0, $snapshot_id );
 		?>
-		<table class="widefat striped as-content-queue" data-as-lazy-table="processing" data-as-offset="<?php echo esc_attr( count( $items ) ); ?>" data-as-limit="<?php echo esc_attr( $limit ); ?>" data-as-snapshot-id="<?php echo esc_attr( $snapshot_id ); ?>">
+		<table class="widefat striped as-content-queue" data-as-lazy-table="processing" data-as-live-table="processing" data-as-offset="<?php echo esc_attr( count( $items ) ); ?>" data-as-limit="<?php echo esc_attr( $limit ); ?>" data-as-snapshot-id="<?php echo esc_attr( $snapshot_id ); ?>" data-as-empty-message="<?php esc_attr_e( 'No processing jobs yet.', 'as-content-stream' ); ?>" data-as-empty-colspan="16">
 			<thead>
 				<tr>
 					<th><?php esc_html_e( 'Job', 'as-content-stream' ); ?></th>
@@ -850,7 +850,7 @@ class AS_Content_Stream {
 			</thead>
 			<tbody>
 				<?php if ( empty( $items ) ) : ?>
-					<tr><td colspan="16"><?php esc_html_e( 'No processing jobs yet.', 'as-content-stream' ); ?></td></tr>
+					<tr class="as-content-empty-row"><td colspan="16"><?php esc_html_e( 'No processing jobs yet.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
 				<?php $this->render_processing_item_rows( $items, false ); ?>
 			</tbody>
@@ -1163,6 +1163,25 @@ class AS_Content_Stream {
 					}
 					tbody.insertBefore(template.content, tbody.firstChild);
 				}
+				function replaceRows(table, html) {
+					var tbody = table.querySelector('tbody');
+					if (!tbody) {
+						return;
+					}
+					if (html) {
+						var template = document.createElement('template');
+						template.innerHTML = html;
+						tbody.replaceChildren(template.content);
+						return;
+					}
+					var row = document.createElement('tr');
+					row.className = 'as-content-empty-row';
+					var cell = document.createElement('td');
+					cell.colSpan = parseInt(table.dataset.asEmptyColspan || '1', 10) || 1;
+					cell.textContent = table.dataset.asEmptyMessage || '';
+					row.appendChild(cell);
+					tbody.replaceChildren(row);
+				}
 				function loadNext(table) {
 					if (table.dataset.asDone === '1' || table.dataset.asLoading === '1') {
 						return;
@@ -1249,10 +1268,39 @@ class AS_Content_Stream {
 							table.dataset.asLoading = '0';
 						});
 				}
+				function refreshLiveTable(table) {
+					if (table.dataset.asLiveLoading === '1') {
+						return;
+					}
+					table.dataset.asLiveLoading = '1';
+					var data = new window.FormData();
+					var currentRows = table.querySelectorAll('tbody tr:not(.as-content-empty-row)').length;
+					var requestedLimit = Math.max(parseInt(table.dataset.asOffset || '0', 10) || 0, currentRows, parseInt(table.dataset.asLimit || '50', 10) || 50);
+					data.append('action', 'as_content_stream_lazy_rows');
+					data.append('nonce', nonce);
+					data.append('table', (table.dataset.asLiveTable || '') + '_live');
+					data.append('queue_action', table.dataset.asAction || '');
+					data.append('limit', String(requestedLimit));
+					window.fetch(ajaxUrl, { method: 'POST', credentials: 'same-origin', body: data })
+						.then(function (response) { return response.json(); })
+						.then(function (response) {
+							if (!response || !response.success || !response.data) {
+								return;
+							}
+							replaceRows(table, response.data.html || '');
+							table.dataset.asOffset = String(response.data.count || '0');
+						})
+						.finally(function () {
+							table.dataset.asLiveLoading = '0';
+						});
+				}
 				Array.prototype.forEach.call(document.querySelectorAll('[data-as-lazy-table]'), function (table) {
 					if (table.dataset.asLazyTable === 'log_live') {
 						window.setInterval(function () { watchLog(table); }, 1000);
 						return;
+					}
+					if (table.dataset.asLiveTable) {
+						window.setInterval(function () { refreshLiveTable(table); }, 1000);
 					}
 					if ((parseInt(table.dataset.asOffset || '0', 10) || 0) < (parseInt(table.dataset.asLimit || '50', 10) || 50)) {
 						table.dataset.asDone = '1';
@@ -1357,7 +1405,7 @@ class AS_Content_Stream {
 		$table = isset( $_POST['table'] ) ? sanitize_key( wp_unslash( $_POST['table'] ) ) : '';
 		$offset = isset( $_POST['offset'] ) ? absint( wp_unslash( $_POST['offset'] ) ) : 0;
 		$limit = isset( $_POST['limit'] ) ? absint( wp_unslash( $_POST['limit'] ) ) : 50;
-		$limit = min( 50, max( 1, $limit ) );
+		$limit = min( false !== strpos( $table, '_live' ) ? 1000 : 50, max( 1, $limit ) );
 		$lookup_id = isset( $_POST['lookup_id'] ) ? absint( wp_unslash( $_POST['lookup_id'] ) ) : 0;
 		$snapshot_id = isset( $_POST['snapshot_id'] ) ? absint( wp_unslash( $_POST['snapshot_id'] ) ) : 0;
 		$rows = array();
@@ -1372,8 +1420,21 @@ class AS_Content_Stream {
 				}
 				break;
 
+			case 'queue_live':
+				$queue_action = isset( $_POST['queue_action'] ) ? sanitize_key( wp_unslash( $_POST['queue_action'] ) ) : '';
+				if ( in_array( $queue_action, array( 'create', 'update', 'delete', 'discover' ), true ) ) {
+					$rows = $this->get_queue_items( $queue_action, $limit, 0, 0 );
+					$this->render_queue_item_rows( $rows );
+				}
+				break;
+
 			case 'processing':
 				$rows = $this->get_processing_queue_items( false, 0, $limit, $offset, $snapshot_id );
+				$this->render_processing_item_rows( $rows, false );
+				break;
+
+			case 'processing_live':
+				$rows = $this->get_processing_queue_items( false, 0, $limit, 0, 0 );
 				$this->render_processing_item_rows( $rows, false );
 				break;
 
@@ -5093,7 +5154,7 @@ class AS_Content_Stream {
 		global $wpdb;
 
 		$action = sanitize_key( $action );
-		$limit = min( 50, max( 1, absint( $limit ) ) );
+		$limit = min( 1000, max( 1, absint( $limit ) ) );
 		$offset = absint( $offset );
 		$snapshot_id = absint( $snapshot_id );
 		$order_by = 'discover' === $action ? 'post_type ASC, source_post_id ASC' : 'id DESC';
@@ -5141,7 +5202,7 @@ class AS_Content_Stream {
 		global $wpdb;
 
 		self::create_processing_queue_table();
-		$limit = min( 50, max( 1, absint( $limit ) ) );
+		$limit = min( 1000, max( 1, absint( $limit ) ) );
 		$offset = absint( $offset );
 		$snapshot_id = absint( $snapshot_id );
 		$snapshot_sql = $snapshot_id ? ' AND p.id <= %d' : '';

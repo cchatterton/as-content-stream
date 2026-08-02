@@ -1,7 +1,7 @@
 # Content Stream
 
 Author: AlphaSys
-Version: 0.1.66
+Version: 0.1.67
 Status: POC
 
 ## Purpose
@@ -22,6 +22,7 @@ Content Stream is a network-enabled WordPress plugin scaffold for multisite cont
 - Shows all-tab queue summary counts in Network Status.
 - Shows live queue status and blocked/failed processing pressure in Heartbeat.
 - Refreshes Settings dashboard metrics every second with AJAX.
+- Refreshes open source and processing queue tables every second while you watch them.
 - Keeps Settings and Sites & WPML tabs visible alongside the queue tabs.
 - Shows post title, post name, and an edit link in queue rows.
 - De-duplicates pending queue rows for the same source post/action/post type.
