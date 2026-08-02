@@ -2,6 +2,12 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.75 - 2026-08-02
+
+- Removes Mapped Missing, Diff, Wrong Status, and Needs repair from Sites & WPML.
+- Moves broken active map rows back into Discovery by marking them inactive during Run Discovery.
+- Restores the Sites & WPML operator model to mapped published, mapped draft, not mapped, and Clean.
+
 ## 0.1.74 - 2026-08-02
 
 - Removes the site-specific impact default from CPT Settings.

@@ -551,12 +551,8 @@ class AS_Content_Stream {
 					<th><?php esc_html_e( 'Site', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'WPML', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Languages', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Expected', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Mapped Published', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Mapped Draft', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Mapped Missing', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Diff', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Wrong Status', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Not Mapped', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Status', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Control', 'as-content-stream' ); ?></th>
@@ -564,17 +560,13 @@ class AS_Content_Stream {
 			</thead>
 			<tbody>
 				<?php if ( empty( $sites ) ) : ?>
-					<tr><td colspan="13"><?php esc_html_e( 'No sites found.', 'as-content-stream' ); ?></td></tr>
+					<tr><td colspan="9"><?php esc_html_e( 'No sites found.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
 				<?php foreach ( $sites as $site ) : ?>
 					<?php
 					$health = isset( $site_health[ (int) $site['blog_id'] ] ) ? $site_health[ (int) $site['blog_id'] ] : array();
-					$expected = isset( $health['expected'] ) ? (int) $health['expected'] : null;
 					$mapped_published = isset( $health['mapped_published'] ) ? (int) $health['mapped_published'] : null;
 					$mapped_draft = isset( $health['mapped_draft'] ) ? (int) $health['mapped_draft'] : null;
-					$mapped_missing = isset( $health['mapped_missing'] ) ? (int) $health['mapped_missing'] : null;
-					$diff = isset( $health['diff'] ) ? (int) $health['diff'] : null;
-					$wrong_status = isset( $health['wrong_status'] ) ? (int) $health['wrong_status'] : null;
 					$not_mapped = isset( $health['not_mapped'] ) ? (int) $health['not_mapped'] : null;
 					$health_status = isset( $health['status'] ) ? sanitize_key( $health['status'] ) : 'not_scanned';
 					$can_clean = ! empty( $site['wpml_active'] ) && in_array( $target_language, (array) $site['languages'], true );
@@ -591,12 +583,8 @@ class AS_Content_Stream {
 							</span>
 						</td>
 						<td><?php echo esc_html( $this->format_list( $site['languages'] ) ); ?></td>
-						<td><?php echo esc_html( null === $expected ? '-' : $expected ); ?></td>
 						<td><?php echo esc_html( null === $mapped_published ? '-' : $mapped_published ); ?></td>
 						<td><?php echo esc_html( null === $mapped_draft ? '-' : $mapped_draft ); ?></td>
-						<td><?php echo esc_html( null === $mapped_missing ? '-' : $mapped_missing ); ?></td>
-						<td><?php echo esc_html( null === $diff ? '-' : $diff ); ?></td>
-						<td><?php echo esc_html( null === $wrong_status ? '-' : $wrong_status ); ?></td>
 						<td><?php echo esc_html( null === $not_mapped ? '-' : $not_mapped ); ?></td>
 						<td><?php echo esc_html( $this->format_site_health_status( $health_status ) ); ?></td>
 						<td>
@@ -2648,7 +2636,7 @@ class AS_Content_Stream {
 		return array_values(
 			(array) $wpdb->get_results(
 				$wpdb->prepare(
-					"SELECT l.target_post_id, l.source_post_type
+					"SELECT l.id, l.target_post_id, l.source_post_type
 					FROM {$links_table} l
 					INNER JOIN {$posts_table} p
 						ON p.ID = l.source_post_id
@@ -2677,8 +2665,6 @@ class AS_Content_Stream {
 				return __( 'Healthy', 'as-content-stream' );
 			case 'needs_clean':
 				return __( 'Needs clean', 'as-content-stream' );
-			case 'needs_repair':
-				return __( 'Needs repair', 'as-content-stream' );
 			case 'inactive':
 				return __( 'Inactive', 'as-content-stream' );
 			default:
@@ -5297,6 +5283,7 @@ class AS_Content_Stream {
 			return;
 		}
 
+		$this->invalidate_broken_streaming_map_rows();
 		$this->delete_stale_discovery_queue_items();
 
 		foreach ( $this->get_discovery_source_items() as $item ) {
@@ -5328,6 +5315,78 @@ class AS_Content_Stream {
 		}
 
 		$this->refresh_site_health_snapshots();
+	}
+
+	/**
+	 * Move broken active map rows out of the active map before Discovery runs.
+	 *
+	 * @return void
+	 */
+	private function invalidate_broken_streaming_map_rows() {
+		global $wpdb;
+
+		$sites = $this->get_destination_sites_for_scan();
+		$language_counts = $this->get_language_counts( $sites );
+		$target_language = $this->get_effective_target_language( $language_counts );
+		if ( '' === $target_language ) {
+			return;
+		}
+
+		$broken_ids = array();
+		foreach ( $sites as $site ) {
+			if ( empty( $site['wpml_active'] ) || ! in_array( $target_language, (array) $site['languages'], true ) ) {
+				continue;
+			}
+
+			$blog_id = (int) $site['blog_id'];
+			$mapped_rows = $this->get_active_mapped_target_rows( $blog_id, $target_language );
+			if ( empty( $mapped_rows ) ) {
+				continue;
+			}
+
+			$restore = get_current_blog_id() !== $blog_id;
+			if ( $restore ) {
+				switch_to_blog( $blog_id );
+			}
+
+			foreach ( $mapped_rows as $mapped_row ) {
+				$link_id = isset( $mapped_row['id'] ) ? (int) $mapped_row['id'] : 0;
+				$target_post_id = isset( $mapped_row['target_post_id'] ) ? (int) $mapped_row['target_post_id'] : 0;
+				$source_post_type = isset( $mapped_row['source_post_type'] ) ? sanitize_key( $mapped_row['source_post_type'] ) : '';
+				$post = $target_post_id ? get_post( $target_post_id ) : null;
+				$language = $post instanceof WP_Post ? $this->get_post_language_current_site( $target_post_id, $post->post_type ) : '';
+
+				if (
+					$link_id
+					&& (
+						! $post instanceof WP_Post
+						|| 'trash' === sanitize_key( $post->post_status )
+						|| sanitize_key( $post->post_type ) !== $source_post_type
+						|| sanitize_key( $language ) !== sanitize_key( $target_language )
+					)
+				) {
+					$broken_ids[] = $link_id;
+				}
+			}
+
+			if ( $restore ) {
+				restore_current_blog();
+			}
+		}
+
+		$broken_ids = array_values( array_unique( array_filter( array_map( 'absint', $broken_ids ) ) ) );
+		if ( empty( $broken_ids ) ) {
+			return;
+		}
+
+		$placeholders = implode( ',', array_fill( 0, count( $broken_ids ), '%d' ) );
+		$args = array_merge( array( current_time( 'mysql', true ), 'inactive_broken' ), $broken_ids );
+		$wpdb->query(
+			$wpdb->prepare(
+				'UPDATE ' . self::links_table_name() . " SET updated_at = %s, status = %s WHERE id IN ({$placeholders})",
+				$args
+			)
+		);
 	}
 
 	/**
@@ -5443,11 +5502,8 @@ class AS_Content_Stream {
 		$base = array(
 			'blog_id'           => $blog_id,
 			'target_language'   => sanitize_key( $target_language ),
-			'expected'          => 0,
 			'mapped_published'  => 0,
 			'mapped_draft'      => 0,
-			'mapped_missing'    => 0,
-			'diff'              => 0,
 			'wrong_status'      => 0,
 			'not_mapped'        => 0,
 			'status'            => 'inactive',
@@ -5458,7 +5514,6 @@ class AS_Content_Stream {
 			return $base;
 		}
 
-		$base['expected'] = $this->get_published_source_content_count();
 		$mapped_rows = $this->get_active_mapped_target_rows( $blog_id, $target_language );
 		$seen_mapped_ids = array();
 		$restore = get_current_blog_id() !== $blog_id;
@@ -5481,7 +5536,6 @@ class AS_Content_Stream {
 				|| sanitize_key( $post->post_type ) !== $source_post_type
 				|| sanitize_key( $language ) !== sanitize_key( $target_language )
 			) {
-				$base['mapped_missing']++;
 				continue;
 			}
 
@@ -5508,10 +5562,7 @@ class AS_Content_Stream {
 			}
 		}
 
-		$base['diff'] = (int) $base['expected'] - ( (int) $base['mapped_published'] + (int) $base['mapped_draft'] + (int) $base['mapped_missing'] );
-		if ( 0 !== (int) $base['diff'] || 0 !== (int) $base['mapped_missing'] ) {
-			$base['status'] = 'needs_repair';
-		} elseif ( 0 !== (int) $base['wrong_status'] || 0 !== (int) $base['not_mapped'] ) {
+		if ( 0 !== (int) $base['wrong_status'] || 0 !== (int) $base['not_mapped'] ) {
 			$base['status'] = 'needs_clean';
 		} else {
 			$base['status'] = 'healthy';
