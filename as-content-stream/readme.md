@@ -1,7 +1,7 @@
 # Content Stream
 
 Author: AlphaSys
-Version: 0.1.80
+Version: 0.1.81
 Status: POC
 
 ## Purpose
@@ -16,6 +16,7 @@ Content Stream is a network-enabled WordPress plugin scaffold for multisite cont
 - Shows per-site, per-CPT reconciliation counts refreshed by Discovery.
 - Shows Discovery Last Run on Sites & WPML.
 - Shows destination sites as internal tabs on Sites & WPML.
+- Links Sites & WPML post type rows to the destination site's filtered admin list.
 - Adds CPT Settings for per-post-type stream status, defaulting every post type to Draft until configured.
 - Records create, update, and delete content actions in a visible global queue.
 - Captures individual and bulk edits/trash actions on the core source site.

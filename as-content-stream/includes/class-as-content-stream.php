@@ -686,9 +686,10 @@ class AS_Content_Stream {
 									$row_status_label = __( 'Not aligned', 'as-content-stream' );
 									$row_status_class = 'as-content-row-status-not-aligned';
 								}
+								$post_type_url = $this->post_type_list_url( $blog_id, $post_type, $target_language );
 								?>
 								<tr>
-									<td><code><?php echo esc_html( $post_type ); ?></code></td>
+									<td><a href="<?php echo esc_url( $post_type_url ); ?>" target="_blank" rel="noopener noreferrer"><code><?php echo esc_html( $post_type ); ?></code></a></td>
 									<td><?php echo esc_html( isset( $row['stream_as'] ) ? ucfirst( sanitize_key( $row['stream_as'] ) ) : '-' ); ?></td>
 									<td><?php echo esc_html( isset( $row['source_published'] ) ? (int) $row['source_published'] : 0 ); ?></td>
 									<td><?php echo esc_html( isset( $row['total_in_language'] ) ? (int) $row['total_in_language'] : 0 ); ?></td>

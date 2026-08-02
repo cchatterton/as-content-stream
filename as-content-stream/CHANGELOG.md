@@ -2,6 +2,10 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.81 - 2026-08-03
+
+- Links each Sites & WPML post type to that destination site's filtered admin list for the streaming language.
+
 ## 0.1.80 - 2026-08-03
 
 - Runs manual Discovery through AJAX batches instead of one long admin-post request.
