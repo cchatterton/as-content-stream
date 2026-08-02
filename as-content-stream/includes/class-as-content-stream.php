@@ -115,6 +115,7 @@ class AS_Content_Stream {
 		add_action( 'admin_post_as_content_stream_save_settings', array( $this, 'save_settings' ) );
 		add_action( 'admin_post_as_content_stream_clear_queue', array( $this, 'clear_queue' ) );
 		add_action( 'admin_post_as_content_stream_run_queue_item', array( $this, 'run_queue_item' ) );
+		add_action( 'admin_post_as_content_stream_delete_queue_item', array( $this, 'delete_queue_item' ) );
 		add_action( 'admin_post_as_content_stream_rerun_discovery', array( $this, 'rerun_discovery' ) );
 		add_action( 'admin_post_as_content_stream_clear_log', array( $this, 'clear_log' ) );
 		add_action( 'admin_post_as_content_stream_run_processing_job', array( $this, 'run_processing_job' ) );
@@ -781,15 +782,7 @@ class AS_Content_Stream {
 	private function render_queue_tab( $action, $limit = 50 ) {
 		$snapshot_id = $this->get_queue_snapshot_id( $action );
 		$items  = $this->get_queue_items( $action, $limit, 0, $snapshot_id );
-		$counts = $this->get_queue_counts();
 		?>
-		<div class="as-content-queue-actions">
-			<p><strong><?php esc_html_e( 'Queue status:', 'as-content-stream' ); ?></strong> <?php echo esc_html( $this->format_counts( $counts ) ); ?></p>
-			<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_clear_queue' ) ); ?>">
-				<?php wp_nonce_field( self::NONCE_QUEUE ); ?>
-				<?php submit_button( __( 'Clear Pending Items', 'as-content-stream' ), 'secondary', 'submit', false ); ?>
-			</form>
-		</div>
 		<table class="widefat striped as-content-queue" data-as-lazy-table="queue" data-as-action="<?php echo esc_attr( sanitize_key( $action ) ); ?>" data-as-offset="<?php echo esc_attr( count( $items ) ); ?>" data-as-limit="<?php echo esc_attr( $limit ); ?>" data-as-snapshot-id="<?php echo esc_attr( $snapshot_id ); ?>">
 			<thead>
 				<tr>
@@ -821,38 +814,6 @@ class AS_Content_Stream {
 	 * @return void
 	 */
 	private function render_discovery_tab() {
-		$stats = $this->get_discovery_stats();
-		?>
-		<div class="as-content-queue-actions">
-			<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_rerun_discovery' ) ); ?>">
-				<?php wp_nonce_field( self::NONCE_QUEUE ); ?>
-				<?php submit_button( __( 'Re-run Discovery', 'as-content-stream' ), 'secondary', 'submit', false ); ?>
-			</form>
-		</div>
-		<table class="widefat striped as-content-queue as-content-discovery-stats">
-			<thead>
-				<tr>
-					<th><?php esc_html_e( 'Post Type', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Published in Core', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Mapped', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Unmapped', 'as-content-stream' ); ?></th>
-				</tr>
-			</thead>
-			<tbody>
-				<?php if ( empty( $stats ) ) : ?>
-					<tr><td colspan="4"><?php esc_html_e( 'All published source content is mapped for the active target sites.', 'as-content-stream' ); ?></td></tr>
-				<?php endif; ?>
-				<?php foreach ( $stats as $stat ) : ?>
-					<tr>
-						<td><strong><?php echo esc_html( $stat['post_type'] ); ?></strong></td>
-						<td><?php echo esc_html( (int) $stat['published'] ); ?></td>
-						<td><?php echo esc_html( (int) $stat['mapped'] ); ?></td>
-						<td><?php echo esc_html( (int) $stat['unmapped'] ); ?></td>
-					</tr>
-				<?php endforeach; ?>
-			</tbody>
-		</table>
-		<?php
 		$this->render_queue_tab( 'discover' );
 	}
 
@@ -907,7 +868,7 @@ class AS_Content_Stream {
 		$lookup_id = isset( $_GET['lookup_id'] ) ? absint( $_GET['lookup_id'] ) : 0;
 		$limit = 50;
 		$snapshot_id = $this->get_processing_queue_snapshot_id( true, $lookup_id );
-		$items = $this->get_processing_queue_items( true, $lookup_id, $limit, 0, $snapshot_id );
+		$items = $lookup_id ? $this->get_processing_queue_items( true, $lookup_id, $limit, 0, $snapshot_id ) : array();
 		?>
 		<div class="as-content-queue-actions">
 			<form method="get" action="<?php echo esc_url( admin_url( 'admin.php' ) ); ?>" class="as-content-inline-form">
@@ -923,12 +884,8 @@ class AS_Content_Stream {
 			<?php if ( $lookup_id ) : ?>
 				<p><?php esc_html_e( 'Showing completed processing jobs where that ID is source or destination.', 'as-content-stream' ); ?></p>
 			<?php endif; ?>
-			<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_clear_log' ) ); ?>">
-				<?php wp_nonce_field( self::NONCE_LOG ); ?>
-				<?php submit_button( __( 'Clear Log', 'as-content-stream' ), 'secondary', 'submit', false ); ?>
-			</form>
 		</div>
-		<table class="widefat striped as-content-queue" data-as-lazy-table="log" data-as-lookup-id="<?php echo esc_attr( $lookup_id ); ?>" data-as-offset="<?php echo esc_attr( count( $items ) ); ?>" data-as-limit="<?php echo esc_attr( $limit ); ?>" data-as-snapshot-id="<?php echo esc_attr( $snapshot_id ); ?>">
+		<table class="widefat striped as-content-queue" data-as-lazy-table="<?php echo esc_attr( $lookup_id ? 'log' : 'log_live' ); ?>" data-as-lookup-id="<?php echo esc_attr( $lookup_id ); ?>" data-as-offset="<?php echo esc_attr( count( $items ) ); ?>" data-as-limit="<?php echo esc_attr( $limit ); ?>" data-as-snapshot-id="<?php echo esc_attr( $snapshot_id ); ?>">
 			<thead>
 				<tr>
 					<th><?php esc_html_e( 'Job', 'as-content-stream' ); ?></th>
@@ -949,7 +906,7 @@ class AS_Content_Stream {
 			</thead>
 			<tbody>
 				<?php if ( empty( $items ) ) : ?>
-					<tr><td colspan="14"><?php esc_html_e( 'No completed processing jobs yet.', 'as-content-stream' ); ?></td></tr>
+					<tr class="as-content-empty-row"><td colspan="14"><?php echo esc_html( $lookup_id ? __( 'No completed processing jobs found for that post ID.', 'as-content-stream' ) : __( 'Watching for completed processing jobs.', 'as-content-stream' ) ); ?></td></tr>
 				<?php endif; ?>
 				<?php $this->render_processing_item_rows( $items, true ); ?>
 			</tbody>
@@ -1040,10 +997,17 @@ class AS_Content_Stream {
 				<td><?php echo esc_html( isset( $payload['post_name'] ) ? $payload['post_name'] : '' ); ?></td>
 				<td><?php echo esc_html( $item->post_type ); ?></td>
 				<td>
-					<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_run_queue_item' ) ); ?>">
+					<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_run_queue_item' ) ); ?>" class="as-content-row-action">
 						<?php wp_nonce_field( self::NONCE_QUEUE ); ?>
 						<input type="hidden" name="queue_id" value="<?php echo esc_attr( (int) $item->id ); ?>">
 						<?php submit_button( __( 'Run', 'as-content-stream' ), 'secondary small', 'submit', false ); ?>
+					</form>
+					<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_delete_queue_item' ) ); ?>" class="as-content-row-action">
+						<?php wp_nonce_field( self::NONCE_QUEUE ); ?>
+						<input type="hidden" name="queue_id" value="<?php echo esc_attr( (int) $item->id ); ?>">
+						<button type="submit" class="button button-small as-content-icon-button" aria-label="<?php esc_attr_e( 'Delete queue item', 'as-content-stream' ); ?>" title="<?php esc_attr_e( 'Delete queue item', 'as-content-stream' ); ?>" onclick="return window.confirm('<?php echo esc_js( __( 'Delete this queue item?', 'as-content-stream' ) ); ?>');">
+							<span class="dashicons dashicons-trash" aria-hidden="true"></span>
+						</button>
 					</form>
 				</td>
 			</tr>
@@ -1184,7 +1148,20 @@ class AS_Content_Stream {
 				function appendRows(tbody, html) {
 					var template = document.createElement('template');
 					template.innerHTML = html;
+					var emptyRow = tbody.querySelector('.as-content-empty-row');
+					if (emptyRow) {
+						emptyRow.remove();
+					}
 					tbody.appendChild(template.content);
+				}
+				function prependRows(tbody, html) {
+					var template = document.createElement('template');
+					template.innerHTML = html;
+					var emptyRow = tbody.querySelector('.as-content-empty-row');
+					if (emptyRow) {
+						emptyRow.remove();
+					}
+					tbody.insertBefore(template.content, tbody.firstChild);
 				}
 				function loadNext(table) {
 					if (table.dataset.asDone === '1' || table.dataset.asLoading === '1') {
@@ -1243,7 +1220,40 @@ class AS_Content_Stream {
 							table.dataset.asLoading = '0';
 						});
 				}
+				function watchLog(table) {
+					if (table.dataset.asLoading === '1') {
+						return;
+					}
+					table.dataset.asLoading = '1';
+					var data = new window.FormData();
+					data.append('action', 'as_content_stream_lazy_rows');
+					data.append('nonce', nonce);
+					data.append('table', 'log_live');
+					data.append('limit', table.dataset.asLimit || '50');
+					data.append('snapshot_id', table.dataset.asSnapshotId || '0');
+					window.fetch(ajaxUrl, { method: 'POST', credentials: 'same-origin', body: data })
+						.then(function (response) { return response.json(); })
+						.then(function (response) {
+							if (!response || !response.success || !response.data) {
+								return;
+							}
+							var tbody = table.querySelector('tbody');
+							if (tbody && response.data.html) {
+								prependRows(tbody, response.data.html);
+							}
+							if (response.data.snapshot_id) {
+								table.dataset.asSnapshotId = String(response.data.snapshot_id);
+							}
+						})
+						.finally(function () {
+							table.dataset.asLoading = '0';
+						});
+				}
 				Array.prototype.forEach.call(document.querySelectorAll('[data-as-lazy-table]'), function (table) {
+					if (table.dataset.asLazyTable === 'log_live') {
+						window.setInterval(function () { watchLog(table); }, 1000);
+						return;
+					}
 					if ((parseInt(table.dataset.asOffset || '0', 10) || 0) < (parseInt(table.dataset.asLimit || '50', 10) || 50)) {
 						table.dataset.asDone = '1';
 						return;
@@ -1372,6 +1382,21 @@ class AS_Content_Stream {
 				$this->render_processing_item_rows( $rows, true );
 				break;
 
+			case 'log_live':
+				$rows = $this->get_processing_queue_items_after_snapshot( $snapshot_id, $limit );
+				$this->render_processing_item_rows( $rows, true );
+				if ( ! empty( $rows ) ) {
+					$snapshot_id = max(
+						array_map(
+							static function ( $row ) {
+								return (int) $row->id;
+							},
+							$rows
+						)
+					);
+				}
+				break;
+
 			case 'links':
 				$rows = $this->get_links( $lookup_id, $limit, $offset, $snapshot_id );
 				$this->render_link_rows( $rows );
@@ -1384,6 +1409,7 @@ class AS_Content_Stream {
 				'html'     => $html,
 				'count'    => count( $rows ),
 				'has_more' => count( $rows ) >= $limit,
+				'snapshot_id' => $snapshot_id,
 			)
 		);
 	}
@@ -3585,6 +3611,46 @@ class AS_Content_Stream {
 	}
 
 	/**
+	 * Delete one source queue item.
+	 *
+	 * @return void
+	 */
+	public function delete_queue_item() {
+		if ( ! is_multisite() || ! is_main_site() || ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You do not have permission to update Content Stream.', 'as-content-stream' ) );
+		}
+
+		check_admin_referer( self::NONCE_QUEUE );
+
+		$queue_id = isset( $_POST['queue_id'] ) ? absint( $_POST['queue_id'] ) : 0;
+		$tab = 'create_queue';
+		if ( $queue_id ) {
+			global $wpdb;
+			self::create_queue_table();
+			$item = $wpdb->get_row(
+				$wpdb->prepare(
+					'SELECT action FROM ' . self::queue_table_name() . ' WHERE id = %d LIMIT 1',
+					$queue_id
+				)
+			);
+			if ( $item ) {
+				$action = sanitize_key( $item->action );
+				if ( in_array( $action, array( 'discover', 'create', 'update', 'delete' ), true ) ) {
+					$tab = 'discover' === $action ? 'discovery_queue' : $action . '_queue';
+				}
+				$wpdb->delete(
+					self::queue_table_name(),
+					array( 'id' => $queue_id ),
+					array( '%d' )
+				);
+			}
+		}
+
+		wp_safe_redirect( $this->admin_url( array( 'tab' => $tab ) ) );
+		exit;
+	}
+
+	/**
 	 * Clear and rebuild non-complete Discovery queue rows.
 	 *
 	 * @return void
@@ -5110,6 +5176,30 @@ class AS_Content_Stream {
 			$wpdb->prepare(
 				'SELECT * FROM ' . self::processing_queue_table_name() . ' WHERE ' . $status_sql . $snapshot_where_sql . ' ORDER BY id DESC LIMIT %d OFFSET %d',
 				$args
+			)
+		);
+	}
+
+	/**
+	 * Get newly completed processing rows after a snapshot ID.
+	 *
+	 * @param int $snapshot_id Last seen processing job ID.
+	 * @param int $limit Row limit.
+	 * @return array<int,object>
+	 */
+	private function get_processing_queue_items_after_snapshot( $snapshot_id, $limit = 50 ) {
+		global $wpdb;
+
+		self::create_processing_queue_table();
+		$snapshot_id = absint( $snapshot_id );
+		$limit = min( 50, max( 1, absint( $limit ) ) );
+
+		return $wpdb->get_results(
+			$wpdb->prepare(
+				'SELECT * FROM ' . self::processing_queue_table_name() . " WHERE status = %s AND id > %d ORDER BY id DESC LIMIT %d",
+				'complete',
+				$snapshot_id,
+				$limit
 			)
 		);
 	}

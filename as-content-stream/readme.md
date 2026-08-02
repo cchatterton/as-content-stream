@@ -1,7 +1,7 @@
 # Content Stream
 
 Author: AlphaSys
-Version: 0.1.65
+Version: 0.1.66
 Status: POC
 
 ## Purpose
@@ -15,7 +15,7 @@ Content Stream is a network-enabled WordPress plugin scaffold for multisite cont
 - Records create, update, and delete content actions in a visible global queue.
 - Captures individual and bulk edits/trash actions on the core source site.
 - Splits queue visibility into Create Queue, Update Queue, and Delete Queue tabs.
-- Shows a temporary Discovery Queue tab with compact stats when published source content is not fully mapped.
+- Shows a temporary Discovery Queue tab when published source content is not fully mapped.
 - Limits Discovery to public post types currently registered on the core site.
 - Provides a manual Re-run Discovery button to clear and rebuild Discovery queue rows.
 - Runs Discovery only on plugin activation or a manual Re-run Discovery click.
@@ -30,6 +30,7 @@ Content Stream is a network-enabled WordPress plugin scaffold for multisite cont
 - Stores the target language setting from available destination languages for future queue processing.
 - Ensures active WPML destination sites have the no-login stream author and integration role.
 - Adds manual Run controls to Create, Update, and Delete Queue rows to move items into Processing Queue.
+- Adds manual Delete controls to Discovery, Create, Update, and Delete Queue rows.
 - Queue-style tables expose Job IDs and use Post Title as the source edit link.
 - Discovery uses legacy WFC Push Post metadata first, then slug/language matching, then blocks behind a normal create job when destination content is missing.
 - Links source and destination sites from the Processing Queue and Log tabs.
@@ -42,6 +43,7 @@ Content Stream is a network-enabled WordPress plugin scaffold for multisite cont
 - Keeps Streaming Map rows collapsed to one current relationship per source post, destination site, post type, and language.
 - Reconciles Streaming Map rows out of the active map when a destination site no longer has WPML active.
 - Log supports post ID lookup across retained completed jobs by source or destination post ID.
+- Log opens as a live watch table for newly completed jobs and switches to historical lookup when a post ID is searched.
 - Copies featured images into destination uploads and indexes them as destination attachments.
 - Blocks jobs on missing related-post meta dependencies and creates priority blocker jobs.
 - Supports WordPress-native updates from GitHub releases.

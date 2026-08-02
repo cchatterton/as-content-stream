@@ -2,6 +2,13 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.66 - 2026-08-02
+
+- Removes the Discovery post-type summary table and Discovery-tab Re-run button.
+- Removes source queue status summaries and bulk Clear Pending controls from queue tabs.
+- Adds per-row Delete controls to Discovery, Create, Update, and Delete queues.
+- Changes Log to open empty and live-watch newly completed jobs, while post ID lookup remains historical.
+
 ## 0.1.65 - 2026-08-02
 
 - Removes visible batch-loading text from lazy-loaded table tabs.
