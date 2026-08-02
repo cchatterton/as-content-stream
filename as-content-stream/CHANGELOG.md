@@ -2,6 +2,13 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.78 - 2026-08-03
+
+- Reworks Sites & WPML into per-site sections with per-CPT reconciliation tables.
+- Adds source published counts to CPT Settings and site health snapshots.
+- Makes site health compare expected source counts to valid mapped destination counts per CPT.
+- Changes site Clean to run per destination site and post type.
+
 ## 0.1.77 - 2026-08-02
 
 - Makes Discovery use the same valid-destination check as Sites & WPML health.

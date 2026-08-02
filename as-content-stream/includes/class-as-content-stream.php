@@ -544,60 +544,99 @@ class AS_Content_Stream {
 		$language_counts = $this->get_language_counts( $sites );
 		$target_language = $this->get_effective_target_language( $language_counts );
 		?>
-		<table class="widefat striped as-content-sites">
-			<thead>
-				<tr>
-					<th><?php esc_html_e( 'Site ID', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Site', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'WPML', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Languages', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Mapped Published', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Mapped Draft', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Not Mapped', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Status', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Control', 'as-content-stream' ); ?></th>
-				</tr>
-			</thead>
-			<tbody>
-				<?php if ( empty( $sites ) ) : ?>
-					<tr><td colspan="9"><?php esc_html_e( 'No sites found.', 'as-content-stream' ); ?></td></tr>
-				<?php endif; ?>
-				<?php foreach ( $sites as $site ) : ?>
-					<?php
-					$health = isset( $site_health[ (int) $site['blog_id'] ] ) ? $site_health[ (int) $site['blog_id'] ] : array();
-					$mapped_published = isset( $health['mapped_published'] ) ? (int) $health['mapped_published'] : null;
-					$mapped_draft = isset( $health['mapped_draft'] ) ? (int) $health['mapped_draft'] : null;
-					$not_mapped = isset( $health['not_mapped'] ) ? (int) $health['not_mapped'] : null;
-					$health_status = isset( $health['status'] ) ? sanitize_key( $health['status'] ) : 'not_scanned';
-					$can_clean = ! empty( $site['wpml_active'] ) && in_array( $target_language, (array) $site['languages'], true );
-					?>
-					<tr>
-						<td><?php echo esc_html( (int) $site['blog_id'] ); ?></td>
-						<td>
-							<strong><?php echo esc_html( $site['name'] ); ?></strong><br>
+		<?php if ( empty( $sites ) ) : ?>
+			<p><?php esc_html_e( 'No sites found.', 'as-content-stream' ); ?></p>
+			<?php return; ?>
+		<?php endif; ?>
+		<div class="as-content-site-jump-links" aria-label="<?php esc_attr_e( 'Site links', 'as-content-stream' ); ?>">
+			<?php foreach ( $sites as $site ) : ?>
+				<a class="button button-secondary" href="#as-content-site-<?php echo esc_attr( (int) $site['blog_id'] ); ?>">
+					<?php echo esc_html( sprintf( '#%d %s', (int) $site['blog_id'], $site['name'] ) ); ?>
+				</a>
+			<?php endforeach; ?>
+		</div>
+		<div class="as-content-site-sections">
+			<?php foreach ( $sites as $site ) : ?>
+				<?php
+				$blog_id = (int) $site['blog_id'];
+				$health = isset( $site_health[ $blog_id ] ) ? $site_health[ $blog_id ] : array();
+				$post_type_rows = isset( $health['post_types'] ) && is_array( $health['post_types'] ) ? $health['post_types'] : array();
+				$health_status = isset( $health['status'] ) ? sanitize_key( $health['status'] ) : 'not_scanned';
+				$can_clean = ! empty( $site['wpml_active'] ) && in_array( $target_language, (array) $site['languages'], true );
+				?>
+				<section id="as-content-site-<?php echo esc_attr( $blog_id ); ?>" class="as-content-site-section">
+					<div class="as-content-site-heading">
+						<div>
+							<h2><?php echo esc_html( sprintf( '#%d %s', $blog_id, $site['name'] ) ); ?></h2>
 							<a href="<?php echo esc_url( $site['url'] ); ?>"><?php echo esc_html( $site['url'] ); ?></a>
-						</td>
-						<td>
-							<span class="as-status as-status-<?php echo esc_attr( $site['wpml_active'] ? 'yes' : 'no' ); ?>">
-								<?php echo esc_html( $site['wpml_active'] ? __( 'Active', 'as-content-stream' ) : __( 'Not detected', 'as-content-stream' ) ); ?>
+						</div>
+						<div class="as-content-site-meta">
+							<span>
+								<?php esc_html_e( 'WPML:', 'as-content-stream' ); ?>
+								<strong class="as-status as-status-<?php echo esc_attr( $site['wpml_active'] ? 'yes' : 'no' ); ?>">
+									<?php echo esc_html( $site['wpml_active'] ? __( 'Active', 'as-content-stream' ) : __( 'Not detected', 'as-content-stream' ) ); ?>
+								</strong>
 							</span>
-						</td>
-						<td><?php echo esc_html( $this->format_list( $site['languages'] ) ); ?></td>
-						<td><?php echo esc_html( null === $mapped_published ? '-' : $mapped_published ); ?></td>
-						<td><?php echo esc_html( null === $mapped_draft ? '-' : $mapped_draft ); ?></td>
-						<td><?php echo esc_html( null === $not_mapped ? '-' : $not_mapped ); ?></td>
-						<td><?php echo esc_html( $this->format_site_health_status( $health_status ) ); ?></td>
-						<td>
-							<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_clean_site' ) ); ?>" class="as-content-row-action as-content-overlay-form" data-as-overlay-message="<?php esc_attr_e( 'Cleaning...', 'as-content-stream' ); ?>">
-								<?php wp_nonce_field( self::NONCE_QUEUE ); ?>
-								<input type="hidden" name="blog_id" value="<?php echo esc_attr( (int) $site['blog_id'] ); ?>">
-								<?php submit_button( __( 'Clean', 'as-content-stream' ), 'secondary small', 'submit', false, $can_clean ? array() : array( 'disabled' => 'disabled' ) ); ?>
-							</form>
-						</td>
-					</tr>
-				<?php endforeach; ?>
-			</tbody>
-		</table>
+							<span><?php esc_html_e( 'Languages:', 'as-content-stream' ); ?> <strong><?php echo esc_html( $this->format_list( $site['languages'] ) ); ?></strong></span>
+							<span><?php esc_html_e( 'Status:', 'as-content-stream' ); ?> <strong><?php echo esc_html( $this->format_site_health_status( $health_status ) ); ?></strong></span>
+						</div>
+					</div>
+					<table class="widefat striped as-content-sites">
+						<thead>
+							<tr>
+								<th><?php esc_html_e( 'Post Type', 'as-content-stream' ); ?></th>
+								<th><?php esc_html_e( 'Stream As', 'as-content-stream' ); ?></th>
+								<th><?php esc_html_e( 'Source Published', 'as-content-stream' ); ?></th>
+								<th><?php esc_html_e( 'Total In Language', 'as-content-stream' ); ?></th>
+								<th><?php esc_html_e( 'Mapped Published', 'as-content-stream' ); ?></th>
+								<th><?php esc_html_e( 'Mapped Not Published', 'as-content-stream' ); ?></th>
+								<th><?php esc_html_e( 'Not Mapped', 'as-content-stream' ); ?></th>
+								<th><?php esc_html_e( 'Missing', 'as-content-stream' ); ?></th>
+								<th><?php esc_html_e( 'Status', 'as-content-stream' ); ?></th>
+								<th><?php esc_html_e( 'Control', 'as-content-stream' ); ?></th>
+							</tr>
+						</thead>
+						<tbody>
+							<?php if ( empty( $post_type_rows ) ) : ?>
+								<tr><td colspan="10"><?php esc_html_e( 'No site health scan found. Run Discovery to refresh this site.', 'as-content-stream' ); ?></td></tr>
+							<?php endif; ?>
+							<?php foreach ( $post_type_rows as $post_type => $row ) : ?>
+								<?php
+								$post_type = sanitize_key( $post_type );
+								$row_status = isset( $row['status'] ) ? sanitize_key( $row['status'] ) : 'not_scanned';
+								if ( 'aligned' === $row_status ) {
+									$row_status_label = __( 'Aligned', 'as-content-stream' );
+								} elseif ( 'inactive' === $row_status ) {
+									$row_status_label = __( 'Inactive', 'as-content-stream' );
+								} else {
+									$row_status_label = __( 'Not aligned', 'as-content-stream' );
+								}
+								?>
+								<tr>
+									<td><code><?php echo esc_html( $post_type ); ?></code></td>
+									<td><?php echo esc_html( isset( $row['stream_as'] ) ? ucfirst( sanitize_key( $row['stream_as'] ) ) : '-' ); ?></td>
+									<td><?php echo esc_html( isset( $row['source_published'] ) ? (int) $row['source_published'] : 0 ); ?></td>
+									<td><?php echo esc_html( isset( $row['total_in_language'] ) ? (int) $row['total_in_language'] : 0 ); ?></td>
+									<td><?php echo esc_html( isset( $row['mapped_published'] ) ? (int) $row['mapped_published'] : 0 ); ?></td>
+									<td><?php echo esc_html( isset( $row['mapped_not_published'] ) ? (int) $row['mapped_not_published'] : 0 ); ?></td>
+									<td><?php echo esc_html( isset( $row['not_mapped'] ) ? (int) $row['not_mapped'] : 0 ); ?></td>
+									<td><?php echo esc_html( isset( $row['missing'] ) ? (int) $row['missing'] : 0 ); ?></td>
+									<td><?php echo esc_html( $row_status_label ); ?></td>
+									<td>
+										<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_clean_site' ) ); ?>" class="as-content-row-action as-content-overlay-form" data-as-overlay-message="<?php esc_attr_e( 'Cleaning...', 'as-content-stream' ); ?>">
+											<?php wp_nonce_field( self::NONCE_QUEUE ); ?>
+											<input type="hidden" name="blog_id" value="<?php echo esc_attr( $blog_id ); ?>">
+											<input type="hidden" name="post_type" value="<?php echo esc_attr( $post_type ); ?>">
+											<?php submit_button( __( 'Clean', 'as-content-stream' ), 'secondary small', 'submit', false, $can_clean ? array() : array( 'disabled' => 'disabled' ) ); ?>
+										</form>
+									</td>
+								</tr>
+							<?php endforeach; ?>
+						</tbody>
+					</table>
+				</section>
+			<?php endforeach; ?>
+		</div>
 		<?php
 	}
 
@@ -609,6 +648,7 @@ class AS_Content_Stream {
 	private function render_post_types_tab() {
 		$post_types = $this->get_discoverable_source_post_types();
 		$settings = $this->get_post_type_status_settings();
+		$source_counts = $this->get_published_source_counts_by_post_type();
 		?>
 		<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_save_post_type_settings' ) ); ?>">
 			<?php wp_nonce_field( self::NONCE_SETTINGS ); ?>
@@ -617,18 +657,20 @@ class AS_Content_Stream {
 					<tr>
 						<th><?php esc_html_e( 'Post Type', 'as-content-stream' ); ?></th>
 						<th><?php esc_html_e( 'Label', 'as-content-stream' ); ?></th>
+						<th><?php esc_html_e( 'Source Published', 'as-content-stream' ); ?></th>
 						<th><?php esc_html_e( 'Stream As', 'as-content-stream' ); ?></th>
 					</tr>
 				</thead>
 				<tbody>
 					<?php if ( empty( $post_types ) ) : ?>
-						<tr><td colspan="3"><?php esc_html_e( 'No streamable post types found.', 'as-content-stream' ); ?></td></tr>
+						<tr><td colspan="4"><?php esc_html_e( 'No streamable post types found.', 'as-content-stream' ); ?></td></tr>
 					<?php endif; ?>
 					<?php foreach ( $post_types as $post_type ) : ?>
 						<?php $status = isset( $settings[ $post_type ] ) ? sanitize_key( $settings[ $post_type ] ) : $this->get_default_post_type_stream_status( $post_type ); ?>
 						<tr>
 							<td><code><?php echo esc_html( $post_type ); ?></code></td>
 							<td><?php echo esc_html( $this->get_post_type_label( $post_type ) ); ?></td>
+							<td><?php echo esc_html( isset( $source_counts[ $post_type ] ) ? (int) $source_counts[ $post_type ] : 0 ); ?></td>
 							<td>
 								<select name="post_type_status[<?php echo esc_attr( $post_type ); ?>]">
 									<option value="draft" <?php selected( $status, 'draft' ); ?>><?php esc_html_e( 'Draft', 'as-content-stream' ); ?></option>
@@ -2721,7 +2763,7 @@ class AS_Content_Stream {
 			case 'healthy':
 				return __( 'Healthy', 'as-content-stream' );
 			case 'needs_clean':
-				return __( 'Needs clean', 'as-content-stream' );
+				return __( 'Not aligned', 'as-content-stream' );
 			case 'inactive':
 				return __( 'Inactive', 'as-content-stream' );
 			default:
@@ -4114,6 +4156,7 @@ class AS_Content_Stream {
 		check_admin_referer( self::NONCE_QUEUE );
 
 		$blog_id = isset( $_POST['blog_id'] ) ? absint( wp_unslash( $_POST['blog_id'] ) ) : 0;
+		$post_type = isset( $_POST['post_type'] ) ? sanitize_key( wp_unslash( $_POST['post_type'] ) ) : '';
 		if ( ! $blog_id || $blog_id === (int) get_main_site_id() ) {
 			wp_safe_redirect( $this->admin_url( array( 'tab' => 'sites' ) ) );
 			exit;
@@ -4134,11 +4177,30 @@ class AS_Content_Stream {
 			wp_safe_redirect( $this->admin_url( array( 'tab' => 'sites' ) ) );
 			exit;
 		}
+		if ( '' !== $post_type && ! in_array( $post_type, $this->get_discoverable_source_post_types(), true ) ) {
+			wp_safe_redirect( $this->admin_url( array( 'tab' => 'sites' ) ) );
+			exit;
+		}
 
 		$rows = $this->get_target_language_post_rows( $blog_id, $target_language );
 		$mapped_ids = array();
 		foreach ( $this->get_active_mapped_target_rows( $blog_id, $target_language ) as $mapped_row ) {
-			if ( ! empty( $mapped_row['target_post_id'] ) ) {
+			if ( '' !== $post_type && ( empty( $mapped_row['source_post_type'] ) || $post_type !== sanitize_key( $mapped_row['source_post_type'] ) ) ) {
+				continue;
+			}
+
+			$restore = get_current_blog_id() !== $blog_id;
+			if ( $restore ) {
+				switch_to_blog( $blog_id );
+			}
+
+			$is_valid = $this->active_map_row_has_valid_destination_current_site( $mapped_row, $target_language );
+
+			if ( $restore ) {
+				restore_current_blog();
+			}
+
+			if ( $is_valid && ! empty( $mapped_row['target_post_id'] ) ) {
 				$mapped_ids[ (int) $mapped_row['target_post_id'] ] = true;
 			}
 		}
@@ -4149,6 +4211,10 @@ class AS_Content_Stream {
 		}
 
 		foreach ( $rows as $row ) {
+			if ( '' !== $post_type && $post_type !== sanitize_key( $row['post_type'] ) ) {
+				continue;
+			}
+
 			$post_id = (int) $row['ID'];
 			if ( isset( $mapped_ids[ $post_id ] ) ) {
 				$stream_status = $this->get_post_type_stream_status( sanitize_key( $row['post_type'] ) );
@@ -5543,6 +5609,9 @@ class AS_Content_Stream {
 	private function build_site_health_snapshot( $site, $target_language ) {
 		$blog_id = isset( $site['blog_id'] ) ? (int) $site['blog_id'] : 0;
 		$languages = isset( $site['languages'] ) && is_array( $site['languages'] ) ? $site['languages'] : array();
+		$post_types = $this->get_discoverable_source_post_types();
+		$source_counts = $this->get_published_source_counts_by_post_type();
+		$post_type_statuses = $this->get_post_type_status_settings();
 		$base = array(
 			'blog_id'           => $blog_id,
 			'target_language'   => sanitize_key( $target_language ),
@@ -5550,8 +5619,24 @@ class AS_Content_Stream {
 			'mapped_draft'      => 0,
 			'not_mapped'        => 0,
 			'status'            => 'inactive',
+			'post_types'        => array(),
 			'scanned_at'        => current_time( 'mysql', true ),
 		);
+
+		foreach ( $post_types as $post_type ) {
+			$post_type = sanitize_key( $post_type );
+			$base['post_types'][ $post_type ] = array(
+				'post_type'             => $post_type,
+				'stream_as'             => isset( $post_type_statuses[ $post_type ] ) ? sanitize_key( $post_type_statuses[ $post_type ] ) : $this->get_default_post_type_stream_status( $post_type ),
+				'source_published'      => isset( $source_counts[ $post_type ] ) ? (int) $source_counts[ $post_type ] : 0,
+				'total_in_language'     => 0,
+				'mapped_published'      => 0,
+				'mapped_not_published'  => 0,
+				'not_mapped'            => 0,
+				'missing'               => isset( $source_counts[ $post_type ] ) ? (int) $source_counts[ $post_type ] : 0,
+				'status'                => 'inactive',
+			);
+		}
 
 		if ( empty( $site['wpml_active'] ) || '' === $target_language || ! in_array( $target_language, $languages, true ) ) {
 			return $base;
@@ -5577,8 +5662,14 @@ class AS_Content_Stream {
 			$post = get_post( $target_post_id );
 			if ( 'publish' === sanitize_key( $post->post_status ) ) {
 				$base['mapped_published']++;
+				if ( isset( $base['post_types'][ $post->post_type ] ) ) {
+					$base['post_types'][ $post->post_type ]['mapped_published']++;
+				}
 			} else {
 				$base['mapped_draft']++;
+				if ( isset( $base['post_types'][ $post->post_type ] ) ) {
+					$base['post_types'][ $post->post_type ]['mapped_not_published']++;
+				}
 			}
 		}
 
@@ -5589,15 +5680,27 @@ class AS_Content_Stream {
 		$rows = $this->get_target_language_post_rows( $blog_id, $target_language );
 		foreach ( $rows as $row ) {
 			$post_id = (int) $row['ID'];
+			$post_type = isset( $row['post_type'] ) ? sanitize_key( $row['post_type'] ) : '';
+			if ( isset( $base['post_types'][ $post_type ] ) ) {
+				$base['post_types'][ $post_type ]['total_in_language']++;
+			}
 			if ( ! isset( $seen_mapped_ids[ $post_id ] ) ) {
 				$base['not_mapped']++;
+				if ( isset( $base['post_types'][ $post_type ] ) ) {
+					$base['post_types'][ $post_type ]['not_mapped']++;
+				}
 			}
 		}
 
-		if ( 0 !== (int) $base['not_mapped'] ) {
-			$base['status'] = 'needs_clean';
-		} else {
-			$base['status'] = 'healthy';
+		$base['status'] = 'healthy';
+		foreach ( $base['post_types'] as $post_type => $row ) {
+			$mapped_total = (int) $row['mapped_published'] + (int) $row['mapped_not_published'];
+			$missing = max( 0, (int) $row['source_published'] - $mapped_total );
+			$base['post_types'][ $post_type ]['missing'] = $missing;
+			$base['post_types'][ $post_type ]['status'] = 0 === $missing && 0 === (int) $row['not_mapped'] ? 'aligned' : 'not_aligned';
+			if ( 'aligned' !== $base['post_types'][ $post_type ]['status'] ) {
+				$base['status'] = 'needs_clean';
+			}
 		}
 
 		return $base;
@@ -5747,6 +5850,40 @@ class AS_Content_Stream {
 				array_merge( array( 'publish' ), $post_types )
 			)
 		);
+	}
+
+	/**
+	 * Count published streamable source posts by post type.
+	 *
+	 * @return array<string,int>
+	 */
+	private function get_published_source_counts_by_post_type() {
+		global $wpdb;
+
+		$post_types = $this->get_discoverable_source_post_types();
+		$counts = array_fill_keys( $post_types, 0 );
+		if ( empty( $post_types ) ) {
+			return $counts;
+		}
+
+		$table = $wpdb->get_blog_prefix( get_main_site_id() ) . 'posts';
+		$placeholders = implode( ',', array_fill( 0, count( $post_types ), '%s' ) );
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT post_type, COUNT(*) AS total FROM {$table} WHERE post_status = %s AND post_type IN ({$placeholders}) GROUP BY post_type",
+				array_merge( array( 'publish' ), $post_types )
+			),
+			ARRAY_A
+		);
+
+		foreach ( (array) $rows as $row ) {
+			$post_type = isset( $row['post_type'] ) ? sanitize_key( $row['post_type'] ) : '';
+			if ( isset( $counts[ $post_type ] ) ) {
+				$counts[ $post_type ] = (int) $row['total'];
+			}
+		}
+
+		return $counts;
 	}
 
 	/**
