@@ -2,6 +2,10 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.55 - 2026-08-02
+
+- Adds the processing row post title as the `s` search query on Processing Queue post type links.
+
 ## 0.1.54 - 2026-08-02
 
 - Reconciles active Streaming Map rows when a destination site no longer has WPML active by marking those rows inactive.
