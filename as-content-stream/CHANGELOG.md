@@ -2,6 +2,12 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.65 - 2026-08-02
+
+- Removes visible batch-loading text from lazy-loaded table tabs.
+- Adds an animated loading indicator below lazy tables while additional rows are loading.
+- Freezes lazy-loaded table results to the page-load snapshot so new rows wait for a full refresh.
+
 ## 0.1.64 - 2026-08-02
 
 - Loads heavy table tabs in 50-row batches so the first screen renders quickly.

@@ -779,7 +779,8 @@ class AS_Content_Stream {
 	 * @return void
 	 */
 	private function render_queue_tab( $action, $limit = 50 ) {
-		$items  = $this->get_queue_items( $action, $limit );
+		$snapshot_id = $this->get_queue_snapshot_id( $action );
+		$items  = $this->get_queue_items( $action, $limit, 0, $snapshot_id );
 		$counts = $this->get_queue_counts();
 		?>
 		<div class="as-content-queue-actions">
@@ -789,7 +790,7 @@ class AS_Content_Stream {
 				<?php submit_button( __( 'Clear Pending Items', 'as-content-stream' ), 'secondary', 'submit', false ); ?>
 			</form>
 		</div>
-		<table class="widefat striped as-content-queue" data-as-lazy-table="queue" data-as-action="<?php echo esc_attr( sanitize_key( $action ) ); ?>" data-as-offset="<?php echo esc_attr( count( $items ) ); ?>" data-as-limit="<?php echo esc_attr( $limit ); ?>">
+		<table class="widefat striped as-content-queue" data-as-lazy-table="queue" data-as-action="<?php echo esc_attr( sanitize_key( $action ) ); ?>" data-as-offset="<?php echo esc_attr( count( $items ) ); ?>" data-as-limit="<?php echo esc_attr( $limit ); ?>" data-as-snapshot-id="<?php echo esc_attr( $snapshot_id ); ?>">
 			<thead>
 				<tr>
 					<th><?php esc_html_e( 'Job', 'as-content-stream' ); ?></th>
@@ -862,9 +863,10 @@ class AS_Content_Stream {
 	 */
 	private function render_processing_queue_tab() {
 		$limit = 50;
-		$items = $this->get_processing_queue_items( false, 0, $limit );
+		$snapshot_id = $this->get_processing_queue_snapshot_id( false );
+		$items = $this->get_processing_queue_items( false, 0, $limit, 0, $snapshot_id );
 		?>
-		<table class="widefat striped as-content-queue" data-as-lazy-table="processing" data-as-offset="<?php echo esc_attr( count( $items ) ); ?>" data-as-limit="<?php echo esc_attr( $limit ); ?>">
+		<table class="widefat striped as-content-queue" data-as-lazy-table="processing" data-as-offset="<?php echo esc_attr( count( $items ) ); ?>" data-as-limit="<?php echo esc_attr( $limit ); ?>" data-as-snapshot-id="<?php echo esc_attr( $snapshot_id ); ?>">
 			<thead>
 				<tr>
 					<th><?php esc_html_e( 'Job', 'as-content-stream' ); ?></th>
@@ -904,7 +906,8 @@ class AS_Content_Stream {
 	private function render_log_tab() {
 		$lookup_id = isset( $_GET['lookup_id'] ) ? absint( $_GET['lookup_id'] ) : 0;
 		$limit = 50;
-		$items = $this->get_processing_queue_items( true, $lookup_id, $limit );
+		$snapshot_id = $this->get_processing_queue_snapshot_id( true, $lookup_id );
+		$items = $this->get_processing_queue_items( true, $lookup_id, $limit, 0, $snapshot_id );
 		?>
 		<div class="as-content-queue-actions">
 			<form method="get" action="<?php echo esc_url( admin_url( 'admin.php' ) ); ?>" class="as-content-inline-form">
@@ -917,13 +920,15 @@ class AS_Content_Stream {
 					<a class="button" href="<?php echo esc_url( $this->admin_url( array( 'tab' => 'log' ) ) ); ?>"><?php esc_html_e( 'Clear', 'as-content-stream' ); ?></a>
 				<?php endif; ?>
 			</form>
-			<p><?php echo esc_html( $lookup_id ? __( 'Showing completed processing jobs where that ID is source or destination.', 'as-content-stream' ) : __( 'Loading completed processing jobs in batches of 50.', 'as-content-stream' ) ); ?></p>
+			<?php if ( $lookup_id ) : ?>
+				<p><?php esc_html_e( 'Showing completed processing jobs where that ID is source or destination.', 'as-content-stream' ); ?></p>
+			<?php endif; ?>
 			<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_clear_log' ) ); ?>">
 				<?php wp_nonce_field( self::NONCE_LOG ); ?>
 				<?php submit_button( __( 'Clear Log', 'as-content-stream' ), 'secondary', 'submit', false ); ?>
 			</form>
 		</div>
-		<table class="widefat striped as-content-queue" data-as-lazy-table="log" data-as-lookup-id="<?php echo esc_attr( $lookup_id ); ?>" data-as-offset="<?php echo esc_attr( count( $items ) ); ?>" data-as-limit="<?php echo esc_attr( $limit ); ?>">
+		<table class="widefat striped as-content-queue" data-as-lazy-table="log" data-as-lookup-id="<?php echo esc_attr( $lookup_id ); ?>" data-as-offset="<?php echo esc_attr( count( $items ) ); ?>" data-as-limit="<?php echo esc_attr( $limit ); ?>" data-as-snapshot-id="<?php echo esc_attr( $snapshot_id ); ?>">
 			<thead>
 				<tr>
 					<th><?php esc_html_e( 'Job', 'as-content-stream' ); ?></th>
@@ -961,7 +966,8 @@ class AS_Content_Stream {
 	private function render_links_tab() {
 		$lookup_id = isset( $_GET['lookup_id'] ) ? absint( $_GET['lookup_id'] ) : 0;
 		$limit = 50;
-		$links = $this->get_links( $lookup_id, $limit );
+		$snapshot_id = $this->get_links_snapshot_id( $lookup_id );
+		$links = $this->get_links( $lookup_id, $limit, 0, $snapshot_id );
 		?>
 		<div class="as-content-queue-actions">
 			<form method="get" action="<?php echo esc_url( admin_url( 'admin.php' ) ); ?>" class="as-content-inline-form">
@@ -974,9 +980,11 @@ class AS_Content_Stream {
 					<a class="button" href="<?php echo esc_url( $this->admin_url( array( 'tab' => 'links' ) ) ); ?>"><?php esc_html_e( 'Clear', 'as-content-stream' ); ?></a>
 				<?php endif; ?>
 			</form>
-			<p><?php echo esc_html( $lookup_id ? __( 'Showing streaming map rows where that ID is source or destination.', 'as-content-stream' ) : __( 'Loading streaming map rows in batches of 50.', 'as-content-stream' ) ); ?></p>
+			<?php if ( $lookup_id ) : ?>
+				<p><?php esc_html_e( 'Showing streaming map rows where that ID is source or destination.', 'as-content-stream' ); ?></p>
+			<?php endif; ?>
 		</div>
-		<table class="widefat striped as-content-queue" data-as-lazy-table="links" data-as-lookup-id="<?php echo esc_attr( $lookup_id ); ?>" data-as-offset="<?php echo esc_attr( count( $links ) ); ?>" data-as-limit="<?php echo esc_attr( $limit ); ?>">
+		<table class="widefat striped as-content-queue" data-as-lazy-table="links" data-as-lookup-id="<?php echo esc_attr( $lookup_id ); ?>" data-as-offset="<?php echo esc_attr( count( $links ) ); ?>" data-as-limit="<?php echo esc_attr( $limit ); ?>" data-as-snapshot-id="<?php echo esc_attr( $snapshot_id ); ?>">
 			<thead>
 				<tr>
 					<th><?php esc_html_e( 'Job', 'as-content-stream' ); ?></th>
@@ -1182,6 +1190,15 @@ class AS_Content_Stream {
 					if (table.dataset.asDone === '1' || table.dataset.asLoading === '1') {
 						return;
 					}
+					var loader = table.nextElementSibling && table.nextElementSibling.classList.contains('as-content-lazy-loader') ? table.nextElementSibling : null;
+					if (!loader) {
+						loader = document.createElement('div');
+						loader.className = 'as-content-lazy-loader';
+						loader.setAttribute('aria-live', 'polite');
+						loader.innerHTML = '<span></span><span></span><span></span>';
+						table.parentNode.insertBefore(loader, table.nextSibling);
+					}
+					loader.hidden = false;
 					table.dataset.asLoading = '1';
 					var data = new window.FormData();
 					data.append('action', 'as_content_stream_lazy_rows');
@@ -1191,11 +1208,15 @@ class AS_Content_Stream {
 					data.append('lookup_id', table.dataset.asLookupId || '0');
 					data.append('offset', table.dataset.asOffset || '0');
 					data.append('limit', table.dataset.asLimit || '50');
+					data.append('snapshot_id', table.dataset.asSnapshotId || '0');
 					window.fetch(ajaxUrl, { method: 'POST', credentials: 'same-origin', body: data })
 						.then(function (response) { return response.json(); })
 						.then(function (response) {
 							if (!response || !response.success || !response.data) {
 								table.dataset.asDone = '1';
+								if (loader) {
+									loader.hidden = true;
+								}
 								return;
 							}
 							var tbody = table.querySelector('tbody');
@@ -1205,12 +1226,18 @@ class AS_Content_Stream {
 							table.dataset.asOffset = String(parseInt(table.dataset.asOffset || '0', 10) + parseInt(response.data.count || '0', 10));
 							if (!response.data.has_more) {
 								table.dataset.asDone = '1';
+								if (loader) {
+									loader.hidden = true;
+								}
 							} else {
 								window.setTimeout(function () { loadNext(table); }, 150);
 							}
 						})
 						.catch(function () {
 							table.dataset.asDone = '1';
+							if (loader) {
+								loader.hidden = true;
+							}
 						})
 						.finally(function () {
 							table.dataset.asLoading = '0';
@@ -1322,6 +1349,7 @@ class AS_Content_Stream {
 		$limit = isset( $_POST['limit'] ) ? absint( wp_unslash( $_POST['limit'] ) ) : 50;
 		$limit = min( 50, max( 1, $limit ) );
 		$lookup_id = isset( $_POST['lookup_id'] ) ? absint( wp_unslash( $_POST['lookup_id'] ) ) : 0;
+		$snapshot_id = isset( $_POST['snapshot_id'] ) ? absint( wp_unslash( $_POST['snapshot_id'] ) ) : 0;
 		$rows = array();
 
 		ob_start();
@@ -1329,23 +1357,23 @@ class AS_Content_Stream {
 			case 'queue':
 				$queue_action = isset( $_POST['queue_action'] ) ? sanitize_key( wp_unslash( $_POST['queue_action'] ) ) : '';
 				if ( in_array( $queue_action, array( 'create', 'update', 'delete', 'discover' ), true ) ) {
-					$rows = $this->get_queue_items( $queue_action, $limit, $offset );
+					$rows = $this->get_queue_items( $queue_action, $limit, $offset, $snapshot_id );
 					$this->render_queue_item_rows( $rows );
 				}
 				break;
 
 			case 'processing':
-				$rows = $this->get_processing_queue_items( false, 0, $limit, $offset );
+				$rows = $this->get_processing_queue_items( false, 0, $limit, $offset, $snapshot_id );
 				$this->render_processing_item_rows( $rows, false );
 				break;
 
 			case 'log':
-				$rows = $this->get_processing_queue_items( true, $lookup_id, $limit, $offset );
+				$rows = $this->get_processing_queue_items( true, $lookup_id, $limit, $offset, $snapshot_id );
 				$this->render_processing_item_rows( $rows, true );
 				break;
 
 			case 'links':
-				$rows = $this->get_links( $lookup_id, $limit, $offset );
+				$rows = $this->get_links( $lookup_id, $limit, $offset, $snapshot_id );
 				$this->render_link_rows( $rows );
 				break;
 		}
@@ -3153,12 +3181,13 @@ class AS_Content_Stream {
 	 * @param int $lookup_id Optional post ID lookup.
 	 * @return array<int,object>
 	 */
-	private function get_links( $lookup_id = 0, $limit = 50, $offset = 0 ) {
+	private function get_links( $lookup_id = 0, $limit = 50, $offset = 0, $snapshot_id = 0 ) {
 		global $wpdb;
 
 		self::create_links_table();
 		$limit = min( 50, max( 1, absint( $limit ) ) );
 		$offset = absint( $offset );
+		$snapshot_id = absint( $snapshot_id );
 
 		$post_types = $this->get_discoverable_source_post_types();
 		$targets = $this->get_discovery_targets();
@@ -3194,6 +3223,10 @@ class AS_Content_Stream {
 			array( 'active', get_main_site_id(), sanitize_key( $target_language ) ),
 			$target_ids
 		);
+		if ( $snapshot_id ) {
+			$sql .= ' AND l.id <= %d';
+			$args[] = $snapshot_id;
+		}
 
 		if ( $lookup_id ) {
 			$sql .= ' AND (l.source_post_id = %d OR l.target_post_id = %d)';
@@ -3213,6 +3246,61 @@ class AS_Content_Stream {
 		$args[] = $offset;
 
 		return $wpdb->get_results( $wpdb->prepare( $sql, $args ) );
+	}
+
+	/**
+	 * Get the current Streaming Map snapshot ID.
+	 *
+	 * @param int $lookup_id Optional post ID lookup.
+	 * @return int
+	 */
+	private function get_links_snapshot_id( $lookup_id = 0 ) {
+		global $wpdb;
+
+		self::create_links_table();
+
+		$post_types = $this->get_discoverable_source_post_types();
+		$targets = $this->get_discovery_targets();
+		$target_ids = array_map(
+			static function ( $target ) {
+				return (int) $target['blog_id'];
+			},
+			$targets
+		);
+		$language_counts = $this->get_language_counts( $this->discover_sites() );
+		$target_language = $this->get_effective_target_language( $language_counts );
+
+		if ( empty( $post_types ) || empty( $target_ids ) || '' === $target_language ) {
+			return 0;
+		}
+
+		$links_table = self::links_table_name();
+		$posts_table = $wpdb->get_blog_prefix( get_main_site_id() ) . 'posts';
+		$post_type_placeholders = implode( ',', array_fill( 0, count( $post_types ), '%s' ) );
+		$target_placeholders = implode( ',', array_fill( 0, count( $target_ids ), '%d' ) );
+		$sql = "SELECT MAX(l.id) FROM {$links_table} l
+			INNER JOIN {$posts_table} p
+				ON p.ID = l.source_post_id
+				AND p.post_status = %s
+				AND p.post_type IN ({$post_type_placeholders})
+			WHERE l.status = %s
+				AND l.source_blog_id = %d
+				AND l.target_language = %s
+				AND l.target_blog_id IN ({$target_placeholders})";
+		$args = array_merge(
+			array( 'publish' ),
+			$post_types,
+			array( 'active', get_main_site_id(), sanitize_key( $target_language ) ),
+			$target_ids
+		);
+
+		if ( $lookup_id ) {
+			$sql .= ' AND (l.source_post_id = %d OR l.target_post_id = %d)';
+			$args[] = $lookup_id;
+			$args[] = $lookup_id;
+		}
+
+		return (int) $wpdb->get_var( $wpdb->prepare( $sql, $args ) );
 	}
 
 	/**
@@ -4935,20 +5023,43 @@ class AS_Content_Stream {
 	 *
 	 * @return array<int,object>
 	 */
-	private function get_queue_items( $action, $limit = 50, $offset = 0 ) {
+	private function get_queue_items( $action, $limit = 50, $offset = 0, $snapshot_id = 0 ) {
 		global $wpdb;
 
 		$action = sanitize_key( $action );
 		$limit = min( 50, max( 1, absint( $limit ) ) );
 		$offset = absint( $offset );
+		$snapshot_id = absint( $snapshot_id );
 		$order_by = 'discover' === $action ? 'post_type ASC, source_post_id ASC' : 'id DESC';
+		$snapshot_sql = $snapshot_id ? ' AND id <= %d' : '';
+		$args = array( $action );
+		if ( $snapshot_id ) {
+			$args[] = $snapshot_id;
+		}
+		$args[] = $limit;
+		$args[] = $offset;
 
 		return $wpdb->get_results(
 			$wpdb->prepare(
-				'SELECT * FROM ' . self::queue_table_name() . " WHERE action = %s AND status != 'complete' ORDER BY {$order_by} LIMIT %d OFFSET %d",
-				$action,
-				$limit,
-				$offset
+				'SELECT * FROM ' . self::queue_table_name() . " WHERE action = %s AND status != 'complete'{$snapshot_sql} ORDER BY {$order_by} LIMIT %d OFFSET %d",
+				$args
+			)
+		);
+	}
+
+	/**
+	 * Get current queue snapshot ID.
+	 *
+	 * @param string $action Queue action.
+	 * @return int
+	 */
+	private function get_queue_snapshot_id( $action ) {
+		global $wpdb;
+
+		return (int) $wpdb->get_var(
+			$wpdb->prepare(
+				'SELECT MAX(id) FROM ' . self::queue_table_name() . " WHERE action = %s AND status != 'complete'",
+				sanitize_key( $action )
 			)
 		);
 	}
@@ -4960,36 +5071,75 @@ class AS_Content_Stream {
 	 * @param int  $lookup_id Optional post ID lookup for logs.
 	 * @return array<int,object>
 	 */
-	private function get_processing_queue_items( $terminal, $lookup_id = 0, $limit = 50, $offset = 0 ) {
+	private function get_processing_queue_items( $terminal, $lookup_id = 0, $limit = 50, $offset = 0, $snapshot_id = 0 ) {
 		global $wpdb;
 
 		self::create_processing_queue_table();
 		$limit = min( 50, max( 1, absint( $limit ) ) );
 		$offset = absint( $offset );
+		$snapshot_id = absint( $snapshot_id );
+		$snapshot_sql = $snapshot_id ? ' AND p.id <= %d' : '';
+		$snapshot_where_sql = $snapshot_id ? ' AND id <= %d' : '';
 
 		$status_sql = $terminal ? "status = 'complete'" : "status <> 'complete'";
 		if ( $terminal && $lookup_id ) {
 			self::create_links_table();
+			$args = array( 'complete', $lookup_id, $lookup_id );
+			if ( $snapshot_id ) {
+				$args[] = $snapshot_id;
+			}
+			$args[] = $limit;
+			$args[] = $offset;
 
 			return $wpdb->get_results(
 				$wpdb->prepare(
-					'SELECT p.* FROM ' . self::processing_queue_table_name() . ' p LEFT JOIN ' . self::links_table_name() . ' l ON l.id = p.link_id WHERE p.status = %s AND (p.source_post_id = %d OR l.target_post_id = %d) ORDER BY p.id DESC LIMIT %d OFFSET %d',
-					'complete',
-					$lookup_id,
-					$lookup_id,
-					$limit,
-					$offset
+					'SELECT p.* FROM ' . self::processing_queue_table_name() . " p LEFT JOIN " . self::links_table_name() . " l ON l.id = p.link_id WHERE p.status = %s AND (p.source_post_id = %d OR l.target_post_id = %d){$snapshot_sql} ORDER BY p.id DESC LIMIT %d OFFSET %d",
+					$args
 				)
 			);
 		}
 
+		$args = array();
+		if ( $snapshot_id ) {
+			$args[] = $snapshot_id;
+		}
+		$args[] = $limit;
+		$args[] = $offset;
+
 		return $wpdb->get_results(
 			$wpdb->prepare(
-				'SELECT * FROM ' . self::processing_queue_table_name() . ' WHERE ' . $status_sql . ' ORDER BY id DESC LIMIT %d OFFSET %d',
-				$limit,
-				$offset
+				'SELECT * FROM ' . self::processing_queue_table_name() . ' WHERE ' . $status_sql . $snapshot_where_sql . ' ORDER BY id DESC LIMIT %d OFFSET %d',
+				$args
 			)
 		);
+	}
+
+	/**
+	 * Get current processing queue snapshot ID.
+	 *
+	 * @param bool $terminal Whether to get terminal log rows.
+	 * @param int  $lookup_id Optional post ID lookup for logs.
+	 * @return int
+	 */
+	private function get_processing_queue_snapshot_id( $terminal, $lookup_id = 0 ) {
+		global $wpdb;
+
+		self::create_processing_queue_table();
+		$status_sql = $terminal ? "status = 'complete'" : "status <> 'complete'";
+		if ( $terminal && $lookup_id ) {
+			self::create_links_table();
+
+			return (int) $wpdb->get_var(
+				$wpdb->prepare(
+					'SELECT MAX(p.id) FROM ' . self::processing_queue_table_name() . ' p LEFT JOIN ' . self::links_table_name() . ' l ON l.id = p.link_id WHERE p.status = %s AND (p.source_post_id = %d OR l.target_post_id = %d)',
+					'complete',
+					$lookup_id,
+					$lookup_id
+				)
+			);
+		}
+
+		return (int) $wpdb->get_var( 'SELECT MAX(id) FROM ' . self::processing_queue_table_name() . ' WHERE ' . $status_sql );
 	}
 
 	/**
