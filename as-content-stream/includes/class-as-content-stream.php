@@ -867,7 +867,7 @@ class AS_Content_Stream {
 					$payload = $this->decode_queue_payload( $item->payload );
 					$source_url = $this->source_edit_url( (int) $item->source_blog_id, (int) $item->source_post_id );
 					$post_title = isset( $payload['post_title'] ) ? $payload['post_title'] : $this->get_post_title_from_site( (int) $item->source_blog_id, (int) $item->source_post_id );
-					$post_type_url = $this->post_type_list_url( (int) $item->target_blog_id, sanitize_key( $item->post_type ), sanitize_key( $item->target_language ), $post_title );
+					$post_type_url = $this->post_type_list_url( (int) $item->target_blog_id, sanitize_key( $item->post_type ), sanitize_key( $item->target_language ) );
 					$destination_post_id = $this->destination_post_id_for_processing_item( $item, $payload );
 					$destination_post_url = $destination_post_id ? $this->source_edit_url( (int) $item->target_blog_id, $destination_post_id ) : '';
 					$is_blocked = 'blocked' === sanitize_key( $item->status ) || ! empty( $item->blocked_by );
@@ -4069,21 +4069,17 @@ class AS_Content_Stream {
 	 * @param int    $blog_id Blog ID.
 	 * @param string $post_type Post type.
 	 * @param string $language Language code.
-	 * @param string $search Optional search query.
 	 * @return string
 	 */
-	private function post_type_list_url( $blog_id, $post_type, $language, $search = '' ) {
-		$args = array(
-			'post_status' => 'all',
-			'post_type'   => sanitize_key( $post_type ),
-			'lang'        => sanitize_key( $language ),
+	private function post_type_list_url( $blog_id, $post_type, $language ) {
+		return add_query_arg(
+			array(
+				'post_status' => 'all',
+				'post_type'   => sanitize_key( $post_type ),
+				'lang'        => sanitize_key( $language ),
+			),
+			$this->site_admin_url( $blog_id, 'edit.php' )
 		);
-
-		if ( '' !== $search ) {
-			$args['s'] = sanitize_text_field( $search );
-		}
-
-		return add_query_arg( $args, $this->site_admin_url( $blog_id, 'edit.php' ) );
 	}
 
 	/**

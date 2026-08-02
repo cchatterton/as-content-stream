@@ -2,6 +2,10 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.56 - 2026-08-02
+
+- Rolls back adding the post title search query to Processing Queue post type links.
+
 ## 0.1.55 - 2026-08-02
 
 - Adds the processing row post title as the `s` search query on Processing Queue post type links.
