@@ -3975,7 +3975,7 @@ class AS_Content_Stream {
 
 		$this->refresh_discovery_queue();
 
-		wp_safe_redirect( $this->admin_url( array( 'tab' => 'discovery_queue', 'discovery_refreshed' => 1 ) ) );
+		wp_safe_redirect( $this->admin_url( array( 'tab' => 'settings', 'discovery_refreshed' => 1 ) ) );
 		exit;
 	}
 

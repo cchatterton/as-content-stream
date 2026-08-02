@@ -2,6 +2,10 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.72 - 2026-08-02
+
+- Keeps Run Discovery on the Settings tab after the discovery rebuild completes.
+
 ## 0.1.71 - 2026-08-02
 
 - Aligns Sites & WPML health snapshots with Streaming Map logic by starting from active map rows for published source content.
