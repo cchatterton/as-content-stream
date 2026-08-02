@@ -22,6 +22,7 @@ class AS_Content_Stream {
 	const OPTION_SITE_HEALTH     = 'as_content_stream_site_health';
 	const OPTION_POST_TYPE_STATUS = 'as_content_stream_post_type_status';
 	const OPTION_DISCOVERY_LAST_RUN = 'as_content_stream_discovery_last_run';
+	const OPTION_DISCOVERY_RUN   = 'as_content_stream_discovery_run';
 	const NONCE_SETTINGS         = 'as_content_stream_settings';
 	const NONCE_QUEUE            = 'as_content_stream_queue';
 	const NONCE_LOG              = 'as_content_stream_log';
@@ -133,6 +134,8 @@ class AS_Content_Stream {
 		add_action( 'wp_ajax_as_content_stream_heartbeat', array( $this, 'ajax_heartbeat' ) );
 		add_action( 'wp_ajax_as_content_stream_queue_pulse', array( $this, 'ajax_queue_pulse' ) );
 		add_action( 'wp_ajax_as_content_stream_lazy_rows', array( $this, 'ajax_lazy_rows' ) );
+		add_action( 'wp_ajax_as_content_stream_discovery_start', array( $this, 'ajax_discovery_start' ) );
+		add_action( 'wp_ajax_as_content_stream_discovery_step', array( $this, 'ajax_discovery_step' ) );
 		add_action( self::CRON_HOOK, array( $this, 'process_tick' ) );
 		add_filter( 'cron_schedules', array( $this, 'add_cron_schedules' ) );
 		add_filter( 'authenticate', array( $this, 'block_stream_author_authentication' ), 30, 3 );
@@ -468,19 +471,82 @@ class AS_Content_Stream {
 					return;
 				}
 				var label = overlay.querySelector('[data-as-overlay-message]');
+				function setOverlayMessage(message) {
+					if (label) {
+						label.textContent = message || 'Working...';
+					}
+				}
+				function disableForm(form) {
+					Array.prototype.forEach.call(form.querySelectorAll('button, input[type="submit"]'), function (button) {
+						button.disabled = true;
+					});
+				}
+				function ajaxPost(action, nonce) {
+					var data = new window.FormData();
+					data.append('action', action);
+					data.append('nonce', nonce);
+					return window.fetch(window.ajaxurl || <?php echo wp_json_encode( admin_url( 'admin-ajax.php' ) ); ?>, {
+						method: 'POST',
+						credentials: 'same-origin',
+						body: data
+					}).then(function (response) {
+						return response.json();
+					});
+				}
+				Array.prototype.forEach.call(document.querySelectorAll('.as-content-discovery-ajax-form'), function (form) {
+					form.addEventListener('submit', function (event) {
+						var nonce = form.getAttribute('data-as-discovery-nonce');
+						if (!nonce || !window.fetch || form.dataset.asSubmitting === '1') {
+							return;
+						}
+
+						event.preventDefault();
+						form.dataset.asSubmitting = '1';
+						disableForm(form);
+						setOverlayMessage(form.getAttribute('data-as-overlay-message') || 'Discovering...');
+						overlay.hidden = false;
+
+						ajaxPost('as_content_stream_discovery_start', nonce).then(function (payload) {
+							if (!payload || !payload.success) {
+								throw new Error('Discovery could not start.');
+							}
+
+							function step() {
+								return ajaxPost('as_content_stream_discovery_step', nonce).then(function (stepPayload) {
+									if (!stepPayload || !stepPayload.success) {
+										throw new Error('Discovery stopped.');
+									}
+
+									var data = stepPayload.data || {};
+									var processed = data.processed || 0;
+									var total = data.total || 0;
+									setOverlayMessage(total ? 'Discovering... ' + processed + ' / ' + total : 'Discovering...');
+
+									if (data.complete) {
+										window.location.href = form.getAttribute('data-as-discovery-redirect') || window.location.href;
+										return;
+									}
+
+									window.setTimeout(step, 150);
+								});
+							}
+
+							return step();
+						}).catch(function () {
+							form.dataset.asSubmitting = '';
+							setOverlayMessage('Discovery failed. Please refresh and try again.');
+						});
+					});
+				});
 				Array.prototype.forEach.call(document.querySelectorAll('.as-content-overlay-form'), function (form) {
 					form.addEventListener('submit', function (event) {
 						if (form.dataset.asSubmitting === '1') {
 							return;
 						}
 						event.preventDefault();
-						if (label) {
-							label.textContent = form.getAttribute('data-as-overlay-message') || 'Working...';
-						}
+						setOverlayMessage(form.getAttribute('data-as-overlay-message') || 'Working...');
 						overlay.hidden = false;
-						Array.prototype.forEach.call(form.querySelectorAll('button, input[type="submit"]'), function (button) {
-							button.disabled = true;
-						});
+						disableForm(form);
 						window.requestAnimationFrame(function () {
 							form.dataset.asSubmitting = '1';
 							window.HTMLFormElement.prototype.submit.call(form);
@@ -798,7 +864,7 @@ class AS_Content_Stream {
 						<tr><th scope="row"><?php esc_html_e( 'Log', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_log"><?php echo esc_html( $log_count ); ?></td></tr>
 					</tbody>
 				</table>
-				<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_rerun_discovery' ) ); ?>" class="as-content-overlay-form" data-as-overlay-message="<?php esc_attr_e( 'Discovering...', 'as-content-stream' ); ?>">
+				<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_rerun_discovery' ) ); ?>" class="as-content-discovery-ajax-form" data-as-overlay-message="<?php esc_attr_e( 'Discovering...', 'as-content-stream' ); ?>" data-as-discovery-nonce="<?php echo esc_attr( wp_create_nonce( self::NONCE_QUEUE ) ); ?>" data-as-discovery-redirect="<?php echo esc_url( $this->admin_url( array( 'tab' => 'settings', 'discovery_refreshed' => 1 ) ) ); ?>">
 					<?php wp_nonce_field( self::NONCE_QUEUE ); ?>
 					<?php submit_button( __( 'Run Discovery', 'as-content-stream' ), 'secondary', 'submit', false ); ?>
 				</form>
@@ -1711,6 +1777,36 @@ class AS_Content_Stream {
 				'snapshot_id' => $snapshot_id,
 			)
 		);
+	}
+
+	/**
+	 * AJAX start for a batched Discovery run.
+	 *
+	 * @return void
+	 */
+	public function ajax_discovery_start() {
+		if ( ! is_multisite() || ! is_main_site() || ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error();
+		}
+
+		check_ajax_referer( self::NONCE_QUEUE, 'nonce' );
+
+		wp_send_json_success( $this->start_discovery_run() );
+	}
+
+	/**
+	 * AJAX batch step for a Discovery run.
+	 *
+	 * @return void
+	 */
+	public function ajax_discovery_step() {
+		if ( ! is_multisite() || ! is_main_site() || ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error();
+		}
+
+		check_ajax_referer( self::NONCE_QUEUE, 'nonce' );
+
+		wp_send_json_success( $this->process_discovery_run_batch() );
 	}
 
 	/**
@@ -4142,18 +4238,13 @@ class AS_Content_Stream {
 	}
 
 	/**
-	 * Clear and rebuild non-complete Discovery queue rows.
+	 * Clear open Discovery parent and processing work.
 	 *
 	 * @return void
 	 */
-	public function rerun_discovery() {
-		if ( ! is_multisite() || ! is_main_site() || ! current_user_can( 'manage_options' ) ) {
-			wp_die( esc_html__( 'You do not have permission to update Content Stream.', 'as-content-stream' ) );
-		}
-
-		check_admin_referer( self::NONCE_QUEUE );
-
+	private function clear_open_discovery_work() {
 		global $wpdb;
+
 		self::create_queue_table();
 		self::create_processing_queue_table();
 
@@ -4171,7 +4262,127 @@ class AS_Content_Stream {
 				'complete'
 			)
 		);
+	}
 
+	/**
+	 * Start a batched Discovery run.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function start_discovery_run() {
+		$this->clear_open_discovery_work();
+		$this->invalidate_broken_streaming_map_rows();
+		$this->delete_stale_discovery_queue_items();
+
+		$state = array(
+			'status'     => 'running',
+			'started_at' => current_time( 'mysql', true ),
+			'updated_at' => current_time( 'mysql', true ),
+			'offset'     => 0,
+			'processed'  => 0,
+			'inserted'   => 0,
+			'total'      => $this->get_published_source_content_count(),
+		);
+		update_site_option( self::OPTION_DISCOVERY_RUN, $state );
+
+		return array(
+			'complete'  => 0 === (int) $state['total'],
+			'processed' => 0,
+			'inserted'  => 0,
+			'total'     => (int) $state['total'],
+		);
+	}
+
+	/**
+	 * Process one Discovery run batch.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function process_discovery_run_batch() {
+		$state = get_site_option( self::OPTION_DISCOVERY_RUN, array() );
+		if ( ! is_array( $state ) || 'running' !== sanitize_key( isset( $state['status'] ) ? $state['status'] : '' ) ) {
+			$state = $this->start_discovery_run();
+			$state = get_site_option( self::OPTION_DISCOVERY_RUN, array() );
+		}
+
+		$limit = 25;
+		$offset = isset( $state['offset'] ) ? absint( $state['offset'] ) : 0;
+		$total = isset( $state['total'] ) ? absint( $state['total'] ) : 0;
+		$inserted = isset( $state['inserted'] ) ? absint( $state['inserted'] ) : 0;
+		$items = $this->get_published_source_posts( $limit, $offset );
+		$batch_count = count( $items );
+		$targets = $this->get_discovery_targets();
+
+		foreach ( $items as $item ) {
+			if ( $this->source_post_has_full_discovery_map( (int) $item['ID'], sanitize_key( $item['post_type'] ), $targets ) ) {
+				continue;
+			}
+
+			if ( $this->source_queue_action_exists( get_main_site_id(), (int) $item['ID'], sanitize_key( $item['post_type'] ), 'discover' ) ) {
+				continue;
+			}
+
+			$this->insert_queue_item(
+				array(
+					'action'          => 'discover',
+					'source_blog_id'  => get_main_site_id(),
+					'source_post_id'  => (int) $item['ID'],
+					'target_blog_id'  => 0,
+					'target_language' => '',
+					'post_type'       => sanitize_key( $item['post_type'] ),
+					'payload'         => array(
+						'source_uuid'        => $this->get_or_create_source_uuid( get_main_site_id(), (int) $item['ID'] ),
+						'post_title'         => $item['post_title'],
+						'post_status'        => 'publish',
+						'post_name'          => $item['post_name'],
+						'post_date'          => $item['post_date'],
+						'post_date_gmt'      => $item['post_date_gmt'],
+						'post_modified'      => $item['post_modified'],
+						'post_modified_gmt'  => $item['post_modified_gmt'],
+						'original_post_name' => $item['post_name'],
+					),
+				)
+			);
+			$inserted++;
+		}
+
+		$processed = min( $total, $offset + $batch_count );
+		$complete = 0 === $batch_count || $processed >= $total;
+		$state['offset'] = $processed;
+		$state['processed'] = $processed;
+		$state['inserted'] = $inserted;
+		$state['updated_at'] = current_time( 'mysql', true );
+
+		if ( $complete ) {
+			$this->refresh_site_health_snapshots();
+			update_site_option( self::OPTION_DISCOVERY_LAST_RUN, current_time( 'mysql', true ) );
+			$state['status'] = 'complete';
+			$state['completed_at'] = current_time( 'mysql', true );
+		}
+
+		update_site_option( self::OPTION_DISCOVERY_RUN, $state );
+
+		return array(
+			'complete'  => $complete,
+			'processed' => $processed,
+			'inserted'  => $inserted,
+			'total'     => $total,
+		);
+	}
+
+	/**
+	 * Clear and rebuild non-complete Discovery queue rows.
+	 *
+	 * @return void
+	 */
+	public function rerun_discovery() {
+		if ( ! is_multisite() || ! is_main_site() || ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You do not have permission to update Content Stream.', 'as-content-stream' ) );
+		}
+
+		check_admin_referer( self::NONCE_QUEUE );
+
+		$this->clear_open_discovery_work();
 		$this->refresh_discovery_queue();
 
 		wp_safe_redirect( $this->admin_url( array( 'tab' => 'settings', 'discovery_refreshed' => 1 ) ) );
@@ -5950,7 +6161,7 @@ class AS_Content_Stream {
 	 *
 	 * @return array<int,array<string,mixed>>
 	 */
-	private function get_published_source_posts() {
+	private function get_published_source_posts( $limit = 0, $offset = 0 ) {
 		global $wpdb;
 
 		$post_types = $this->get_discoverable_source_post_types();
@@ -5960,10 +6171,19 @@ class AS_Content_Stream {
 
 		$table = $wpdb->get_blog_prefix( get_main_site_id() ) . 'posts';
 		$placeholders = implode( ',', array_fill( 0, count( $post_types ), '%s' ) );
+		$sql = "SELECT ID, post_type, post_title, post_name, post_date, post_date_gmt, post_modified, post_modified_gmt FROM {$table} WHERE post_status = %s AND post_type IN ({$placeholders}) ORDER BY post_type ASC, post_title ASC";
+		$args = array_merge( array( 'publish' ), $post_types );
+
+		if ( $limit ) {
+			$sql .= ' LIMIT %d OFFSET %d';
+			$args[] = absint( $limit );
+			$args[] = absint( $offset );
+		}
+
 		$rows = $wpdb->get_results(
 			$wpdb->prepare(
-				"SELECT ID, post_type, post_title, post_name, post_date, post_date_gmt, post_modified, post_modified_gmt FROM {$table} WHERE post_status = %s AND post_type IN ({$placeholders}) ORDER BY post_type ASC, post_title ASC",
-				array_merge( array( 'publish' ), $post_types )
+				$sql,
+				$args
 			),
 			ARRAY_A
 		);

@@ -2,6 +2,12 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.80 - 2026-08-03
+
+- Runs manual Discovery through AJAX batches instead of one long admin-post request.
+- Keeps the discovery overlay visible while the browser polls batch progress.
+- Leaves the existing admin-post Discovery path as a non-JavaScript fallback.
+
 ## 0.1.79 - 2026-08-03
 
 - Renames Sites & WPML Missing to In Discovery and ties it to open Discovery or processing work.
