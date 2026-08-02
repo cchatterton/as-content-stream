@@ -592,7 +592,7 @@ class AS_Content_Stream {
 						<div class="as-content-gauge-meta">
 							<span><?php esc_html_e( 'Next check', 'as-content-stream' ); ?></span>
 						</div>
-						<div class="as-content-progress as-content-progress-success as-content-progress-reverse" aria-hidden="true">
+						<div class="as-content-progress as-content-progress-success" aria-hidden="true">
 							<span data-as-heartbeat-bar="next" style="width: <?php echo esc_attr( $heartbeat['next_check_percent'] ); ?>%;"></span>
 						</div>
 					</div>

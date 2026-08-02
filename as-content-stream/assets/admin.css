@@ -231,10 +231,6 @@
 	transition: width 160ms ease;
 }
 
-.as-content-progress-reverse span {
-	margin-left: auto;
-}
-
 .as-content-progress-success span {
 	background: #008a20;
 }

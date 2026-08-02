@@ -2,6 +2,10 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.58 - 2026-08-02
+
+- Makes the Heartbeat progress bar fill from left to right.
+
 ## 0.1.57 - 2026-08-02
 
 - Renames the first Settings tile to Options.
