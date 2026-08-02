@@ -24,6 +24,7 @@ class AS_Content_Stream {
 	const NONCE_LOG              = 'as_content_stream_log';
 	const NONCE_PROCESSING       = 'as_content_stream_processing';
 	const NONCE_HEARTBEAT        = 'as_content_stream_heartbeat';
+	const NONCE_LAZY_ROWS        = 'as_content_stream_lazy_rows';
 	const NONCE_TEST_TICK        = 'as_content_stream_test_tick';
 	const PAGE_SLUG              = 'as-content-stream';
 	const CRON_HOOK              = 'as_content_stream_process_tick';
@@ -125,6 +126,7 @@ class AS_Content_Stream {
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ) );
 		add_action( 'wp_ajax_as_content_stream_heartbeat', array( $this, 'ajax_heartbeat' ) );
 		add_action( 'wp_ajax_as_content_stream_queue_pulse', array( $this, 'ajax_queue_pulse' ) );
+		add_action( 'wp_ajax_as_content_stream_lazy_rows', array( $this, 'ajax_lazy_rows' ) );
 		add_action( self::CRON_HOOK, array( $this, 'process_tick' ) );
 		add_filter( 'cron_schedules', array( $this, 'add_cron_schedules' ) );
 		add_filter( 'authenticate', array( $this, 'block_stream_author_authentication' ), 30, 3 );
@@ -776,7 +778,7 @@ class AS_Content_Stream {
 	 *
 	 * @return void
 	 */
-	private function render_queue_tab( $action, $limit = 100 ) {
+	private function render_queue_tab( $action, $limit = 50 ) {
 		$items  = $this->get_queue_items( $action, $limit );
 		$counts = $this->get_queue_counts();
 		?>
@@ -787,7 +789,7 @@ class AS_Content_Stream {
 				<?php submit_button( __( 'Clear Pending Items', 'as-content-stream' ), 'secondary', 'submit', false ); ?>
 			</form>
 		</div>
-		<table class="widefat striped as-content-queue">
+		<table class="widefat striped as-content-queue" data-as-lazy-table="queue" data-as-action="<?php echo esc_attr( sanitize_key( $action ) ); ?>" data-as-offset="<?php echo esc_attr( count( $items ) ); ?>" data-as-limit="<?php echo esc_attr( $limit ); ?>">
 			<thead>
 				<tr>
 					<th><?php esc_html_e( 'Job', 'as-content-stream' ); ?></th>
@@ -805,38 +807,10 @@ class AS_Content_Stream {
 				<?php if ( empty( $items ) ) : ?>
 					<tr><td colspan="9"><?php esc_html_e( 'No queue items yet.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
-				<?php foreach ( $items as $item ) : ?>
-					<?php
-					$payload = $this->decode_queue_payload( $item->payload );
-					$edit_url = $this->source_edit_url( (int) $item->source_blog_id, (int) $item->source_post_id );
-					$post_title = isset( $payload['post_title'] ) ? $payload['post_title'] : $this->get_post_title_from_site( (int) $item->source_blog_id, (int) $item->source_post_id );
-					?>
-					<tr>
-						<td><?php echo esc_html( '#' . (int) $item->id ); ?></td>
-						<td><?php echo esc_html( $item->created_at ); ?></td>
-						<td><?php echo esc_html( $this->format_action_label( $item->action ) ); ?></td>
-						<td><?php echo esc_html( ucfirst( $item->status ) ); ?></td>
-						<td><?php echo esc_html( '#' . (int) $item->source_post_id ); ?></td>
-						<td>
-							<?php if ( $edit_url ) : ?>
-								<a href="<?php echo esc_url( $edit_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $post_title ? $post_title : '#' . (int) $item->source_post_id ); ?></a>
-							<?php else : ?>
-								<?php echo esc_html( $post_title ? $post_title : '-' ); ?>
-							<?php endif; ?>
-						</td>
-						<td><?php echo esc_html( isset( $payload['post_name'] ) ? $payload['post_name'] : '' ); ?></td>
-						<td><?php echo esc_html( $item->post_type ); ?></td>
-						<td>
-							<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_run_queue_item' ) ); ?>">
-								<?php wp_nonce_field( self::NONCE_QUEUE ); ?>
-								<input type="hidden" name="queue_id" value="<?php echo esc_attr( (int) $item->id ); ?>">
-								<?php submit_button( __( 'Run', 'as-content-stream' ), 'secondary small', 'submit', false ); ?>
-							</form>
-						</td>
-					</tr>
-				<?php endforeach; ?>
+				<?php $this->render_queue_item_rows( $items ); ?>
 			</tbody>
 		</table>
+		<?php $this->render_lazy_rows_script(); ?>
 		<?php
 	}
 
@@ -878,7 +852,7 @@ class AS_Content_Stream {
 			</tbody>
 		</table>
 		<?php
-		$this->render_queue_tab( 'discover', 1000 );
+		$this->render_queue_tab( 'discover' );
 	}
 
 	/**
@@ -887,9 +861,10 @@ class AS_Content_Stream {
 	 * @return void
 	 */
 	private function render_processing_queue_tab() {
-		$items = $this->get_processing_queue_items( false );
+		$limit = 50;
+		$items = $this->get_processing_queue_items( false, 0, $limit );
 		?>
-		<table class="widefat striped as-content-queue">
+		<table class="widefat striped as-content-queue" data-as-lazy-table="processing" data-as-offset="<?php echo esc_attr( count( $items ) ); ?>" data-as-limit="<?php echo esc_attr( $limit ); ?>">
 			<thead>
 				<tr>
 					<th><?php esc_html_e( 'Job', 'as-content-stream' ); ?></th>
@@ -914,62 +889,10 @@ class AS_Content_Stream {
 				<?php if ( empty( $items ) ) : ?>
 					<tr><td colspan="16"><?php esc_html_e( 'No processing jobs yet.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
-				<?php foreach ( $items as $item ) : ?>
-					<?php
-					$payload = $this->decode_queue_payload( $item->payload );
-					$source_url = $this->source_edit_url( (int) $item->source_blog_id, (int) $item->source_post_id );
-					$post_title = isset( $payload['post_title'] ) ? $payload['post_title'] : $this->get_post_title_from_site( (int) $item->source_blog_id, (int) $item->source_post_id );
-					$post_type_url = $this->post_type_list_url( (int) $item->target_blog_id, sanitize_key( $item->post_type ), sanitize_key( $item->target_language ) );
-					$destination_post_id = $this->destination_post_id_for_processing_item( $item, $payload );
-					$destination_post_url = $destination_post_id ? $this->source_edit_url( (int) $item->target_blog_id, $destination_post_id ) : '';
-					$is_blocked = 'blocked' === sanitize_key( $item->status ) || ! empty( $item->blocked_by );
-					?>
-					<tr>
-						<td><?php echo esc_html( '#' . (int) $item->id ); ?></td>
-						<td><?php echo esc_html( $item->created_at ); ?></td>
-						<td><?php echo esc_html( '#' . (int) $item->parent_queue_id ); ?></td>
-						<td><?php echo esc_html( ! empty( $item->blocked_by ) ? '#' . (int) $item->blocked_by : '-' ); ?></td>
-						<td><?php echo esc_html( $this->format_action_label( $item->action ) ); ?></td>
-						<td><?php echo esc_html( ucfirst( $item->status ) ); ?></td>
-						<td><?php echo esc_html( '#' . (int) $item->source_post_id ); ?></td>
-						<td>
-							<?php if ( $source_url ) : ?>
-								<a href="<?php echo esc_url( $source_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $post_title ? $post_title : '#' . (int) $item->source_post_id ); ?></a>
-							<?php else : ?>
-								<?php echo esc_html( $post_title ? $post_title : '-' ); ?>
-							<?php endif; ?>
-						</td>
-						<td><a href="<?php echo esc_url( $post_type_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( sanitize_key( $item->post_type ) ); ?></a></td>
-						<td><a href="<?php echo esc_url( $this->site_admin_url( (int) $item->target_blog_id ) ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $this->site_label( (int) $item->target_blog_id ) ); ?></a></td>
-						<td>
-							<?php if ( $destination_post_id && $destination_post_url ) : ?>
-								<a href="<?php echo esc_url( $destination_post_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( '#' . $destination_post_id ); ?></a>
-							<?php else : ?>
-								<?php echo esc_html( '-' ); ?>
-							<?php endif; ?>
-						</td>
-						<td><?php echo esc_html( $item->target_language ); ?></td>
-						<td><?php echo esc_html( (int) $item->attempts ); ?></td>
-						<td><?php echo esc_html( (int) $item->duration_ms . 'ms' ); ?></td>
-						<td><?php echo esc_html( $item->result_message ); ?></td>
-						<td>
-							<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_run_processing_job' ) ); ?>" class="as-content-row-action">
-								<?php wp_nonce_field( self::NONCE_PROCESSING ); ?>
-								<input type="hidden" name="job_id" value="<?php echo esc_attr( (int) $item->id ); ?>">
-								<?php submit_button( __( 'Run', 'as-content-stream' ), 'secondary small', 'submit', false, $is_blocked ? array( 'disabled' => 'disabled' ) : array() ); ?>
-							</form>
-							<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_delete_processing_job' ) ); ?>" class="as-content-row-action">
-								<?php wp_nonce_field( self::NONCE_PROCESSING ); ?>
-								<input type="hidden" name="job_id" value="<?php echo esc_attr( (int) $item->id ); ?>">
-								<button type="submit" class="button button-small as-content-icon-button" aria-label="<?php esc_attr_e( 'Delete processing job', 'as-content-stream' ); ?>" title="<?php esc_attr_e( 'Delete processing job', 'as-content-stream' ); ?>" onclick="return window.confirm('<?php echo esc_js( __( 'Delete this processing job?', 'as-content-stream' ) ); ?>');">
-									<span class="dashicons dashicons-trash" aria-hidden="true"></span>
-								</button>
-							</form>
-						</td>
-					</tr>
-				<?php endforeach; ?>
+				<?php $this->render_processing_item_rows( $items, false ); ?>
 			</tbody>
 		</table>
+		<?php $this->render_lazy_rows_script(); ?>
 		<?php
 	}
 
@@ -980,7 +903,8 @@ class AS_Content_Stream {
 	 */
 	private function render_log_tab() {
 		$lookup_id = isset( $_GET['lookup_id'] ) ? absint( $_GET['lookup_id'] ) : 0;
-		$items = $this->get_processing_queue_items( true, $lookup_id );
+		$limit = 50;
+		$items = $this->get_processing_queue_items( true, $lookup_id, $limit );
 		?>
 		<div class="as-content-queue-actions">
 			<form method="get" action="<?php echo esc_url( admin_url( 'admin.php' ) ); ?>" class="as-content-inline-form">
@@ -993,13 +917,13 @@ class AS_Content_Stream {
 					<a class="button" href="<?php echo esc_url( $this->admin_url( array( 'tab' => 'log' ) ) ); ?>"><?php esc_html_e( 'Clear', 'as-content-stream' ); ?></a>
 				<?php endif; ?>
 			</form>
-			<p><?php echo esc_html( $lookup_id ? __( 'Showing completed processing jobs where that ID is source or destination.', 'as-content-stream' ) : __( 'Showing the latest 100 completed processing jobs.', 'as-content-stream' ) ); ?></p>
+			<p><?php echo esc_html( $lookup_id ? __( 'Showing completed processing jobs where that ID is source or destination.', 'as-content-stream' ) : __( 'Loading completed processing jobs in batches of 50.', 'as-content-stream' ) ); ?></p>
 			<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_clear_log' ) ); ?>">
 				<?php wp_nonce_field( self::NONCE_LOG ); ?>
 				<?php submit_button( __( 'Clear Log', 'as-content-stream' ), 'secondary', 'submit', false ); ?>
 			</form>
 		</div>
-		<table class="widefat striped as-content-queue">
+		<table class="widefat striped as-content-queue" data-as-lazy-table="log" data-as-lookup-id="<?php echo esc_attr( $lookup_id ); ?>" data-as-offset="<?php echo esc_attr( count( $items ) ); ?>" data-as-limit="<?php echo esc_attr( $limit ); ?>">
 			<thead>
 				<tr>
 					<th><?php esc_html_e( 'Job', 'as-content-stream' ); ?></th>
@@ -1022,46 +946,10 @@ class AS_Content_Stream {
 				<?php if ( empty( $items ) ) : ?>
 					<tr><td colspan="14"><?php esc_html_e( 'No completed processing jobs yet.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
-				<?php foreach ( $items as $item ) : ?>
-					<?php
-					$payload = $this->decode_queue_payload( $item->payload );
-					$source_url = $this->source_edit_url( (int) $item->source_blog_id, (int) $item->source_post_id );
-					$post_type_url = $this->post_type_list_url( (int) $item->target_blog_id, sanitize_key( $item->post_type ), sanitize_key( $item->target_language ) );
-					$destination_post_id = $this->destination_post_id_for_processing_item( $item, $payload );
-					$destination_post_url = $destination_post_id ? $this->source_edit_url( (int) $item->target_blog_id, $destination_post_id ) : '';
-					$post_title = isset( $payload['post_title'] ) ? $payload['post_title'] : $this->get_post_title_from_site( (int) $item->source_blog_id, (int) $item->source_post_id );
-					?>
-					<tr>
-						<td><?php echo esc_html( '#' . (int) $item->id ); ?></td>
-						<td><?php echo esc_html( $item->completed_at ); ?></td>
-						<td><?php echo esc_html( '#' . (int) $item->parent_queue_id ); ?></td>
-						<td><?php echo esc_html( $this->format_action_label( $item->action ) ); ?></td>
-						<td><?php echo esc_html( ucfirst( $item->status ) ); ?></td>
-						<td><?php echo esc_html( '#' . (int) $item->source_post_id ); ?></td>
-						<td>
-							<?php if ( $source_url ) : ?>
-								<a href="<?php echo esc_url( $source_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $post_title ? $post_title : '#' . (int) $item->source_post_id ); ?></a>
-							<?php else : ?>
-								<?php echo esc_html( $post_title ? $post_title : '-' ); ?>
-							<?php endif; ?>
-						</td>
-						<td><a href="<?php echo esc_url( $post_type_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( sanitize_key( $item->post_type ) ); ?></a></td>
-						<td><a href="<?php echo esc_url( $this->site_admin_url( (int) $item->target_blog_id ) ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $this->site_label( (int) $item->target_blog_id ) ); ?></a></td>
-						<td>
-							<?php if ( $destination_post_id && $destination_post_url ) : ?>
-								<a href="<?php echo esc_url( $destination_post_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( '#' . $destination_post_id ); ?></a>
-							<?php else : ?>
-								<?php echo esc_html( '-' ); ?>
-							<?php endif; ?>
-						</td>
-						<td><?php echo esc_html( $item->target_language ); ?></td>
-						<td><?php echo esc_html( (int) $item->attempts ); ?></td>
-						<td><?php echo esc_html( (int) $item->duration_ms . 'ms' ); ?></td>
-						<td><?php echo esc_html( $item->result_message ); ?></td>
-					</tr>
-				<?php endforeach; ?>
+				<?php $this->render_processing_item_rows( $items, true ); ?>
 			</tbody>
 		</table>
+		<?php $this->render_lazy_rows_script(); ?>
 		<?php
 	}
 
@@ -1072,7 +960,8 @@ class AS_Content_Stream {
 	 */
 	private function render_links_tab() {
 		$lookup_id = isset( $_GET['lookup_id'] ) ? absint( $_GET['lookup_id'] ) : 0;
-		$links = $this->get_links( $lookup_id );
+		$limit = 50;
+		$links = $this->get_links( $lookup_id, $limit );
 		?>
 		<div class="as-content-queue-actions">
 			<form method="get" action="<?php echo esc_url( admin_url( 'admin.php' ) ); ?>" class="as-content-inline-form">
@@ -1085,9 +974,9 @@ class AS_Content_Stream {
 					<a class="button" href="<?php echo esc_url( $this->admin_url( array( 'tab' => 'links' ) ) ); ?>"><?php esc_html_e( 'Clear', 'as-content-stream' ); ?></a>
 				<?php endif; ?>
 			</form>
-			<p><?php echo esc_html( $lookup_id ? __( 'Showing streaming map rows where that ID is source or destination.', 'as-content-stream' ) : __( 'Showing all streaming map rows.', 'as-content-stream' ) ); ?></p>
+			<p><?php echo esc_html( $lookup_id ? __( 'Showing streaming map rows where that ID is source or destination.', 'as-content-stream' ) : __( 'Loading streaming map rows in batches of 50.', 'as-content-stream' ) ); ?></p>
 		</div>
-		<table class="widefat striped as-content-queue">
+		<table class="widefat striped as-content-queue" data-as-lazy-table="links" data-as-lookup-id="<?php echo esc_attr( $lookup_id ); ?>" data-as-offset="<?php echo esc_attr( count( $links ) ); ?>" data-as-limit="<?php echo esc_attr( $limit ); ?>">
 			<thead>
 				<tr>
 					<th><?php esc_html_e( 'Job', 'as-content-stream' ); ?></th>
@@ -1108,42 +997,234 @@ class AS_Content_Stream {
 				<?php if ( empty( $links ) ) : ?>
 					<tr><td colspan="12"><?php esc_html_e( 'No streaming map rows found.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
-				<?php foreach ( $links as $link ) : ?>
-					<?php
-					$source_url = $this->source_edit_url( (int) $link->source_blog_id, (int) $link->source_post_id );
-					$target_url = $this->source_edit_url( (int) $link->target_blog_id, (int) $link->target_post_id );
-					$post_type_url = $this->post_type_list_url( (int) $link->target_blog_id, sanitize_key( $link->source_post_type ), sanitize_key( $link->target_language ) );
-					$post_title = $this->get_post_title_from_site( (int) $link->source_blog_id, (int) $link->source_post_id );
-					?>
-					<tr>
-						<td><?php echo esc_html( $link->last_processing_job_id ? '#' . (int) $link->last_processing_job_id : '-' ); ?></td>
-						<td><?php echo esc_html( $link->last_streamed_at ? $link->last_streamed_at : '-' ); ?></td>
-						<td><?php echo esc_html( '#' . (int) $link->id ); ?></td>
-						<td><?php echo esc_html( $this->format_action_label( $link->last_action ) ); ?></td>
-						<td><?php echo esc_html( ucfirst( $link->status ) ); ?></td>
-						<td><?php echo esc_html( '#' . (int) $link->source_post_id ); ?></td>
-						<td>
-							<?php if ( $source_url ) : ?>
-								<a href="<?php echo esc_url( $source_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $post_title ? $post_title : '#' . (int) $link->source_post_id ); ?></a>
-							<?php else : ?>
-								<?php echo esc_html( $post_title ? $post_title : '-' ); ?>
-							<?php endif; ?>
-						</td>
-						<td><a href="<?php echo esc_url( $post_type_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( sanitize_key( $link->source_post_type ) ); ?></a></td>
-						<td><a href="<?php echo esc_url( $this->site_admin_url( (int) $link->target_blog_id ) ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $this->site_label( (int) $link->target_blog_id ) ); ?></a></td>
-						<td><a href="<?php echo esc_url( $target_url ? $target_url : $this->site_admin_url( (int) $link->target_blog_id ) ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( '#' . (int) $link->target_post_id ); ?></a></td>
-						<td><?php echo esc_html( $link->target_language ); ?></td>
-						<td>
-							<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_run_link' ) ); ?>">
-								<?php wp_nonce_field( self::NONCE_PROCESSING ); ?>
-								<input type="hidden" name="link_id" value="<?php echo esc_attr( (int) $link->id ); ?>">
-								<?php submit_button( __( 'Run', 'as-content-stream' ), 'secondary small', 'submit', false ); ?>
-							</form>
-						</td>
-					</tr>
-				<?php endforeach; ?>
+				<?php $this->render_link_rows( $links ); ?>
 			</tbody>
 		</table>
+		<?php $this->render_lazy_rows_script(); ?>
+		<?php
+	}
+
+	/**
+	 * Render queue item rows.
+	 *
+	 * @param array<int,object> $items Queue rows.
+	 * @return void
+	 */
+	private function render_queue_item_rows( $items ) {
+		foreach ( $items as $item ) :
+			$payload = $this->decode_queue_payload( $item->payload );
+			$edit_url = $this->source_edit_url( (int) $item->source_blog_id, (int) $item->source_post_id );
+			$post_title = isset( $payload['post_title'] ) ? $payload['post_title'] : $this->get_post_title_from_site( (int) $item->source_blog_id, (int) $item->source_post_id );
+			?>
+			<tr>
+				<td><?php echo esc_html( '#' . (int) $item->id ); ?></td>
+				<td><?php echo esc_html( $item->created_at ); ?></td>
+				<td><?php echo esc_html( $this->format_action_label( $item->action ) ); ?></td>
+				<td><?php echo esc_html( ucfirst( $item->status ) ); ?></td>
+				<td><?php echo esc_html( '#' . (int) $item->source_post_id ); ?></td>
+				<td>
+					<?php if ( $edit_url ) : ?>
+						<a href="<?php echo esc_url( $edit_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $post_title ? $post_title : '#' . (int) $item->source_post_id ); ?></a>
+					<?php else : ?>
+						<?php echo esc_html( $post_title ? $post_title : '-' ); ?>
+					<?php endif; ?>
+				</td>
+				<td><?php echo esc_html( isset( $payload['post_name'] ) ? $payload['post_name'] : '' ); ?></td>
+				<td><?php echo esc_html( $item->post_type ); ?></td>
+				<td>
+					<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_run_queue_item' ) ); ?>">
+						<?php wp_nonce_field( self::NONCE_QUEUE ); ?>
+						<input type="hidden" name="queue_id" value="<?php echo esc_attr( (int) $item->id ); ?>">
+						<?php submit_button( __( 'Run', 'as-content-stream' ), 'secondary small', 'submit', false ); ?>
+					</form>
+				</td>
+			</tr>
+			<?php
+		endforeach;
+	}
+
+	/**
+	 * Render processing queue or log rows.
+	 *
+	 * @param array<int,object> $items Processing rows.
+	 * @param bool              $terminal Whether rows are log rows.
+	 * @return void
+	 */
+	private function render_processing_item_rows( $items, $terminal ) {
+		foreach ( $items as $item ) :
+			$payload = $this->decode_queue_payload( $item->payload );
+			$source_url = $this->source_edit_url( (int) $item->source_blog_id, (int) $item->source_post_id );
+			$post_type_url = $this->post_type_list_url( (int) $item->target_blog_id, sanitize_key( $item->post_type ), sanitize_key( $item->target_language ) );
+			$destination_post_id = $this->destination_post_id_for_processing_item( $item, $payload );
+			$destination_post_url = $destination_post_id ? $this->source_edit_url( (int) $item->target_blog_id, $destination_post_id ) : '';
+			$post_title = isset( $payload['post_title'] ) ? $payload['post_title'] : $this->get_post_title_from_site( (int) $item->source_blog_id, (int) $item->source_post_id );
+			$is_blocked = 'blocked' === sanitize_key( $item->status ) || ! empty( $item->blocked_by );
+			?>
+			<tr>
+				<td><?php echo esc_html( '#' . (int) $item->id ); ?></td>
+				<td><?php echo esc_html( $terminal ? $item->completed_at : $item->created_at ); ?></td>
+				<td><?php echo esc_html( '#' . (int) $item->parent_queue_id ); ?></td>
+				<?php if ( ! $terminal ) : ?>
+					<td><?php echo esc_html( ! empty( $item->blocked_by ) ? '#' . (int) $item->blocked_by : '-' ); ?></td>
+				<?php endif; ?>
+				<td><?php echo esc_html( $this->format_action_label( $item->action ) ); ?></td>
+				<td><?php echo esc_html( ucfirst( $item->status ) ); ?></td>
+				<td><?php echo esc_html( '#' . (int) $item->source_post_id ); ?></td>
+				<td>
+					<?php if ( $source_url ) : ?>
+						<a href="<?php echo esc_url( $source_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $post_title ? $post_title : '#' . (int) $item->source_post_id ); ?></a>
+					<?php else : ?>
+						<?php echo esc_html( $post_title ? $post_title : '-' ); ?>
+					<?php endif; ?>
+				</td>
+				<td><a href="<?php echo esc_url( $post_type_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( sanitize_key( $item->post_type ) ); ?></a></td>
+				<td><a href="<?php echo esc_url( $this->site_admin_url( (int) $item->target_blog_id ) ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $this->site_label( (int) $item->target_blog_id ) ); ?></a></td>
+				<td>
+					<?php if ( $destination_post_id && $destination_post_url ) : ?>
+						<a href="<?php echo esc_url( $destination_post_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( '#' . $destination_post_id ); ?></a>
+					<?php else : ?>
+						<?php echo esc_html( '-' ); ?>
+					<?php endif; ?>
+				</td>
+				<td><?php echo esc_html( $item->target_language ); ?></td>
+				<td><?php echo esc_html( (int) $item->attempts ); ?></td>
+				<td><?php echo esc_html( (int) $item->duration_ms . 'ms' ); ?></td>
+				<td><?php echo esc_html( $item->result_message ); ?></td>
+				<?php if ( ! $terminal ) : ?>
+					<td>
+						<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_run_processing_job' ) ); ?>" class="as-content-row-action">
+							<?php wp_nonce_field( self::NONCE_PROCESSING ); ?>
+							<input type="hidden" name="job_id" value="<?php echo esc_attr( (int) $item->id ); ?>">
+							<?php submit_button( __( 'Run', 'as-content-stream' ), 'secondary small', 'submit', false, $is_blocked ? array( 'disabled' => 'disabled' ) : array() ); ?>
+						</form>
+						<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_delete_processing_job' ) ); ?>" class="as-content-row-action">
+							<?php wp_nonce_field( self::NONCE_PROCESSING ); ?>
+							<input type="hidden" name="job_id" value="<?php echo esc_attr( (int) $item->id ); ?>">
+							<button type="submit" class="button button-small as-content-icon-button" aria-label="<?php esc_attr_e( 'Delete processing job', 'as-content-stream' ); ?>" title="<?php esc_attr_e( 'Delete processing job', 'as-content-stream' ); ?>" onclick="return window.confirm('<?php echo esc_js( __( 'Delete this processing job?', 'as-content-stream' ) ); ?>');">
+								<span class="dashicons dashicons-trash" aria-hidden="true"></span>
+							</button>
+						</form>
+					</td>
+				<?php endif; ?>
+			</tr>
+			<?php
+		endforeach;
+	}
+
+	/**
+	 * Render Streaming Map rows.
+	 *
+	 * @param array<int,object> $links Link rows.
+	 * @return void
+	 */
+	private function render_link_rows( $links ) {
+		foreach ( $links as $link ) :
+			$source_url = $this->source_edit_url( (int) $link->source_blog_id, (int) $link->source_post_id );
+			$target_url = $this->source_edit_url( (int) $link->target_blog_id, (int) $link->target_post_id );
+			$post_type_url = $this->post_type_list_url( (int) $link->target_blog_id, sanitize_key( $link->source_post_type ), sanitize_key( $link->target_language ) );
+			$post_title = $this->get_post_title_from_site( (int) $link->source_blog_id, (int) $link->source_post_id );
+			?>
+			<tr>
+				<td><?php echo esc_html( $link->last_processing_job_id ? '#' . (int) $link->last_processing_job_id : '-' ); ?></td>
+				<td><?php echo esc_html( $link->last_streamed_at ? $link->last_streamed_at : '-' ); ?></td>
+				<td><?php echo esc_html( '#' . (int) $link->id ); ?></td>
+				<td><?php echo esc_html( $this->format_action_label( $link->last_action ) ); ?></td>
+				<td><?php echo esc_html( ucfirst( $link->status ) ); ?></td>
+				<td><?php echo esc_html( '#' . (int) $link->source_post_id ); ?></td>
+				<td>
+					<?php if ( $source_url ) : ?>
+						<a href="<?php echo esc_url( $source_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $post_title ? $post_title : '#' . (int) $link->source_post_id ); ?></a>
+					<?php else : ?>
+						<?php echo esc_html( $post_title ? $post_title : '-' ); ?>
+					<?php endif; ?>
+				</td>
+				<td><a href="<?php echo esc_url( $post_type_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( sanitize_key( $link->source_post_type ) ); ?></a></td>
+				<td><a href="<?php echo esc_url( $this->site_admin_url( (int) $link->target_blog_id ) ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $this->site_label( (int) $link->target_blog_id ) ); ?></a></td>
+				<td><a href="<?php echo esc_url( $target_url ? $target_url : $this->site_admin_url( (int) $link->target_blog_id ) ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( '#' . (int) $link->target_post_id ); ?></a></td>
+				<td><?php echo esc_html( $link->target_language ); ?></td>
+				<td>
+					<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_run_link' ) ); ?>">
+						<?php wp_nonce_field( self::NONCE_PROCESSING ); ?>
+						<input type="hidden" name="link_id" value="<?php echo esc_attr( (int) $link->id ); ?>">
+						<?php submit_button( __( 'Run', 'as-content-stream' ), 'secondary small', 'submit', false ); ?>
+					</form>
+				</td>
+			</tr>
+			<?php
+		endforeach;
+	}
+
+	/**
+	 * Render lazy row loading script once.
+	 *
+	 * @return void
+	 */
+	private function render_lazy_rows_script() {
+		static $printed = false;
+		if ( $printed ) {
+			return;
+		}
+		$printed = true;
+		?>
+		<script>
+			(function () {
+				var ajaxUrl = window.ajaxurl || <?php echo wp_json_encode( admin_url( 'admin-ajax.php' ) ); ?>;
+				var nonce = <?php echo wp_json_encode( wp_create_nonce( self::NONCE_LAZY_ROWS ) ); ?>;
+				if (!ajaxUrl || !nonce) {
+					return;
+				}
+				function appendRows(tbody, html) {
+					var template = document.createElement('template');
+					template.innerHTML = html;
+					tbody.appendChild(template.content);
+				}
+				function loadNext(table) {
+					if (table.dataset.asDone === '1' || table.dataset.asLoading === '1') {
+						return;
+					}
+					table.dataset.asLoading = '1';
+					var data = new window.FormData();
+					data.append('action', 'as_content_stream_lazy_rows');
+					data.append('nonce', nonce);
+					data.append('table', table.dataset.asLazyTable || '');
+					data.append('queue_action', table.dataset.asAction || '');
+					data.append('lookup_id', table.dataset.asLookupId || '0');
+					data.append('offset', table.dataset.asOffset || '0');
+					data.append('limit', table.dataset.asLimit || '50');
+					window.fetch(ajaxUrl, { method: 'POST', credentials: 'same-origin', body: data })
+						.then(function (response) { return response.json(); })
+						.then(function (response) {
+							if (!response || !response.success || !response.data) {
+								table.dataset.asDone = '1';
+								return;
+							}
+							var tbody = table.querySelector('tbody');
+							if (tbody && response.data.html) {
+								appendRows(tbody, response.data.html);
+							}
+							table.dataset.asOffset = String(parseInt(table.dataset.asOffset || '0', 10) + parseInt(response.data.count || '0', 10));
+							if (!response.data.has_more) {
+								table.dataset.asDone = '1';
+							} else {
+								window.setTimeout(function () { loadNext(table); }, 150);
+							}
+						})
+						.catch(function () {
+							table.dataset.asDone = '1';
+						})
+						.finally(function () {
+							table.dataset.asLoading = '0';
+						});
+				}
+				Array.prototype.forEach.call(document.querySelectorAll('[data-as-lazy-table]'), function (table) {
+					if ((parseInt(table.dataset.asOffset || '0', 10) || 0) < (parseInt(table.dataset.asLimit || '50', 10) || 50)) {
+						table.dataset.asDone = '1';
+						return;
+					}
+					window.setTimeout(function () { loadNext(table); }, 100);
+				});
+			}());
+		</script>
 		<?php
 	}
 
@@ -1222,6 +1303,61 @@ class AS_Content_Stream {
 
 		check_ajax_referer( self::NONCE_HEARTBEAT, 'nonce' );
 		wp_send_json_success( $this->get_queue_pulse_status() );
+	}
+
+	/**
+	 * AJAX lazy table rows.
+	 *
+	 * @return void
+	 */
+	public function ajax_lazy_rows() {
+		if ( ! is_multisite() || ! is_main_site() || ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error();
+		}
+
+		check_ajax_referer( self::NONCE_LAZY_ROWS, 'nonce' );
+
+		$table = isset( $_POST['table'] ) ? sanitize_key( wp_unslash( $_POST['table'] ) ) : '';
+		$offset = isset( $_POST['offset'] ) ? absint( wp_unslash( $_POST['offset'] ) ) : 0;
+		$limit = isset( $_POST['limit'] ) ? absint( wp_unslash( $_POST['limit'] ) ) : 50;
+		$limit = min( 50, max( 1, $limit ) );
+		$lookup_id = isset( $_POST['lookup_id'] ) ? absint( wp_unslash( $_POST['lookup_id'] ) ) : 0;
+		$rows = array();
+
+		ob_start();
+		switch ( $table ) {
+			case 'queue':
+				$queue_action = isset( $_POST['queue_action'] ) ? sanitize_key( wp_unslash( $_POST['queue_action'] ) ) : '';
+				if ( in_array( $queue_action, array( 'create', 'update', 'delete', 'discover' ), true ) ) {
+					$rows = $this->get_queue_items( $queue_action, $limit, $offset );
+					$this->render_queue_item_rows( $rows );
+				}
+				break;
+
+			case 'processing':
+				$rows = $this->get_processing_queue_items( false, 0, $limit, $offset );
+				$this->render_processing_item_rows( $rows, false );
+				break;
+
+			case 'log':
+				$rows = $this->get_processing_queue_items( true, $lookup_id, $limit, $offset );
+				$this->render_processing_item_rows( $rows, true );
+				break;
+
+			case 'links':
+				$rows = $this->get_links( $lookup_id, $limit, $offset );
+				$this->render_link_rows( $rows );
+				break;
+		}
+		$html = ob_get_clean();
+
+		wp_send_json_success(
+			array(
+				'html'     => $html,
+				'count'    => count( $rows ),
+				'has_more' => count( $rows ) >= $limit,
+			)
+		);
 	}
 
 	/**
@@ -3017,10 +3153,12 @@ class AS_Content_Stream {
 	 * @param int $lookup_id Optional post ID lookup.
 	 * @return array<int,object>
 	 */
-	private function get_links( $lookup_id = 0 ) {
+	private function get_links( $lookup_id = 0, $limit = 50, $offset = 0 ) {
 		global $wpdb;
 
 		self::create_links_table();
+		$limit = min( 50, max( 1, absint( $limit ) ) );
+		$offset = absint( $offset );
 
 		$post_types = $this->get_discoverable_source_post_types();
 		$targets = $this->get_discovery_targets();
@@ -3061,14 +3199,18 @@ class AS_Content_Stream {
 			$sql .= ' AND (l.source_post_id = %d OR l.target_post_id = %d)';
 			$args[] = $lookup_id;
 			$args[] = $lookup_id;
-			$sql .= ' ORDER BY l.updated_at DESC';
+			$sql .= ' ORDER BY l.updated_at DESC LIMIT %d OFFSET %d';
+			$args[] = $limit;
+			$args[] = $offset;
 
 			return $wpdb->get_results(
 				$wpdb->prepare( $sql, $args )
 			);
 		}
 
-		$sql .= ' ORDER BY l.updated_at DESC';
+		$sql .= ' ORDER BY l.updated_at DESC LIMIT %d OFFSET %d';
+		$args[] = $limit;
+		$args[] = $offset;
 
 		return $wpdb->get_results( $wpdb->prepare( $sql, $args ) );
 	}
@@ -4793,18 +4935,20 @@ class AS_Content_Stream {
 	 *
 	 * @return array<int,object>
 	 */
-	private function get_queue_items( $action, $limit = 100 ) {
+	private function get_queue_items( $action, $limit = 50, $offset = 0 ) {
 		global $wpdb;
 
 		$action = sanitize_key( $action );
-		$limit = max( 1, absint( $limit ) );
+		$limit = min( 50, max( 1, absint( $limit ) ) );
+		$offset = absint( $offset );
 		$order_by = 'discover' === $action ? 'post_type ASC, source_post_id ASC' : 'id DESC';
 
 		return $wpdb->get_results(
 			$wpdb->prepare(
-				'SELECT * FROM ' . self::queue_table_name() . " WHERE action = %s AND status != 'complete' ORDER BY {$order_by} LIMIT %d",
+				'SELECT * FROM ' . self::queue_table_name() . " WHERE action = %s AND status != 'complete' ORDER BY {$order_by} LIMIT %d OFFSET %d",
 				$action,
-				$limit
+				$limit,
+				$offset
 			)
 		);
 	}
@@ -4816,10 +4960,12 @@ class AS_Content_Stream {
 	 * @param int  $lookup_id Optional post ID lookup for logs.
 	 * @return array<int,object>
 	 */
-	private function get_processing_queue_items( $terminal, $lookup_id = 0 ) {
+	private function get_processing_queue_items( $terminal, $lookup_id = 0, $limit = 50, $offset = 0 ) {
 		global $wpdb;
 
 		self::create_processing_queue_table();
+		$limit = min( 50, max( 1, absint( $limit ) ) );
+		$offset = absint( $offset );
 
 		$status_sql = $terminal ? "status = 'complete'" : "status <> 'complete'";
 		if ( $terminal && $lookup_id ) {
@@ -4827,15 +4973,23 @@ class AS_Content_Stream {
 
 			return $wpdb->get_results(
 				$wpdb->prepare(
-					'SELECT p.* FROM ' . self::processing_queue_table_name() . ' p LEFT JOIN ' . self::links_table_name() . ' l ON l.id = p.link_id WHERE p.status = %s AND (p.source_post_id = %d OR l.target_post_id = %d) ORDER BY p.id DESC LIMIT 100',
+					'SELECT p.* FROM ' . self::processing_queue_table_name() . ' p LEFT JOIN ' . self::links_table_name() . ' l ON l.id = p.link_id WHERE p.status = %s AND (p.source_post_id = %d OR l.target_post_id = %d) ORDER BY p.id DESC LIMIT %d OFFSET %d',
 					'complete',
 					$lookup_id,
-					$lookup_id
+					$lookup_id,
+					$limit,
+					$offset
 				)
 			);
 		}
 
-		return $wpdb->get_results( 'SELECT * FROM ' . self::processing_queue_table_name() . ' WHERE ' . $status_sql . ' ORDER BY id DESC LIMIT 100' );
+		return $wpdb->get_results(
+			$wpdb->prepare(
+				'SELECT * FROM ' . self::processing_queue_table_name() . ' WHERE ' . $status_sql . ' ORDER BY id DESC LIMIT %d OFFSET %d',
+				$limit,
+				$offset
+			)
+		);
 	}
 
 	/**

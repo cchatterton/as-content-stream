@@ -2,6 +2,12 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.64 - 2026-08-02
+
+- Loads heavy table tabs in 50-row batches so the first screen renders quickly.
+- Adds AJAX row loading for queue, processing, log, and Streaming Map tables.
+- Keeps initial and lazy-loaded table rows rendered from the same server-side row templates.
+
 ## 0.1.63 - 2026-08-02
 
 - Stops writing featured-image attachment relationships into the Streaming Map.
