@@ -2,6 +2,12 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.82 - 2026-08-03
+
+- Adds an Include checkbox to CPT Settings.
+- Excludes unchecked post types from Discovery, source capture, processing, Streaming Map scope, and Sites & WPML health.
+- Clears open queue and processing work for unchecked post types when CPT Settings are saved.
+
 ## 0.1.81 - 2026-08-03
 
 - Links each Sites & WPML post type to that destination site's filtered admin list for the streaming language.

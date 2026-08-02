@@ -21,6 +21,7 @@ class AS_Content_Stream {
 	const OPTION_TARGET_SIGNATURE = 'as_content_stream_target_signature';
 	const OPTION_SITE_HEALTH     = 'as_content_stream_site_health';
 	const OPTION_POST_TYPE_STATUS = 'as_content_stream_post_type_status';
+	const OPTION_POST_TYPE_INCLUDE = 'as_content_stream_post_type_include';
 	const OPTION_DISCOVERY_LAST_RUN = 'as_content_stream_discovery_last_run';
 	const OPTION_DISCOVERY_RUN   = 'as_content_stream_discovery_run';
 	const NONCE_SETTINGS         = 'as_content_stream_settings';
@@ -748,15 +749,17 @@ class AS_Content_Stream {
 	 * @return void
 	 */
 	private function render_post_types_tab() {
-		$post_types = $this->get_discoverable_source_post_types();
+		$post_types = $this->get_available_source_post_types();
 		$settings = $this->get_post_type_status_settings();
-		$source_counts = $this->get_published_source_counts_by_post_type();
+		$include_settings = $this->get_post_type_include_settings();
+		$source_counts = $this->get_published_source_counts_by_post_type( false );
 		?>
 		<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_save_post_type_settings' ) ); ?>">
 			<?php wp_nonce_field( self::NONCE_SETTINGS ); ?>
 			<table class="widefat striped as-content-queue">
 				<thead>
 					<tr>
+						<th><?php esc_html_e( 'Include', 'as-content-stream' ); ?></th>
 						<th><?php esc_html_e( 'Post Type', 'as-content-stream' ); ?></th>
 						<th><?php esc_html_e( 'Label', 'as-content-stream' ); ?></th>
 						<th><?php esc_html_e( 'Source Published', 'as-content-stream' ); ?></th>
@@ -765,11 +768,12 @@ class AS_Content_Stream {
 				</thead>
 				<tbody>
 					<?php if ( empty( $post_types ) ) : ?>
-						<tr><td colspan="4"><?php esc_html_e( 'No streamable post types found.', 'as-content-stream' ); ?></td></tr>
+						<tr><td colspan="5"><?php esc_html_e( 'No streamable post types found.', 'as-content-stream' ); ?></td></tr>
 					<?php endif; ?>
 					<?php foreach ( $post_types as $post_type ) : ?>
 						<?php $status = isset( $settings[ $post_type ] ) ? sanitize_key( $settings[ $post_type ] ) : $this->get_default_post_type_stream_status( $post_type ); ?>
 						<tr>
+							<td><input type="checkbox" name="post_type_include[<?php echo esc_attr( $post_type ); ?>]" value="1" <?php checked( ! empty( $include_settings[ $post_type ] ) ); ?>></td>
 							<td><code><?php echo esc_html( $post_type ); ?></code></td>
 							<td><?php echo esc_html( $this->get_post_type_label( $post_type ) ); ?></td>
 							<td><?php echo esc_html( isset( $source_counts[ $post_type ] ) ? (int) $source_counts[ $post_type ] : 0 ); ?></td>
@@ -1655,13 +1659,20 @@ class AS_Content_Stream {
 		check_admin_referer( self::NONCE_SETTINGS );
 
 		$posted = isset( $_POST['post_type_status'] ) && is_array( $_POST['post_type_status'] ) ? wp_unslash( $_POST['post_type_status'] ) : array();
+		$posted_include = isset( $_POST['post_type_include'] ) && is_array( $_POST['post_type_include'] ) ? wp_unslash( $_POST['post_type_include'] ) : array();
 		$settings = array();
-		foreach ( $this->get_discoverable_source_post_types() as $post_type ) {
+		$include_settings = array();
+		foreach ( $this->get_available_source_post_types() as $post_type ) {
 			$status = isset( $posted[ $post_type ] ) ? sanitize_key( $posted[ $post_type ] ) : $this->get_default_post_type_stream_status( $post_type );
 			$settings[ $post_type ] = in_array( $status, array( 'draft', 'publish' ), true ) ? $status : $this->get_default_post_type_stream_status( $post_type );
+			$include_settings[ $post_type ] = isset( $posted_include[ $post_type ] ) ? 1 : 0;
 		}
 
 		update_site_option( self::OPTION_POST_TYPE_STATUS, $settings );
+		update_site_option( self::OPTION_POST_TYPE_INCLUDE, $include_settings );
+		$this->clear_excluded_post_type_work();
+		$this->reconcile_current_streaming_map_rows();
+		$this->refresh_site_health_snapshots();
 
 		wp_safe_redirect( $this->admin_url( array( 'tab' => 'post_types', 'updated' => 1 ) ) );
 		exit;
@@ -2184,8 +2195,8 @@ class AS_Content_Stream {
 		$action = sanitize_key( $job->action );
 		$post_type = sanitize_key( $job->post_type );
 
-		if ( ! $this->is_streamable_post_type( $post_type ) ) {
-			return $this->processing_result( 'complete', __( 'Non-streamable post type ignored.', 'as-content-stream' ) );
+		if ( ! $this->is_included_post_type( $post_type ) ) {
+			return $this->processing_result( 'complete', __( 'Post type is not included in Content Stream.', 'as-content-stream' ) );
 		}
 
 		if ( 'delete' === $action ) {
@@ -3550,7 +3561,7 @@ class AS_Content_Stream {
 		$post = get_post( $post_id );
 		$exists = $post instanceof WP_Post && ( $allow_attachment || 'attachment' !== $post->post_type );
 		if ( $exists && $require_streamable ) {
-			$exists = $this->is_streamable_post_type( $post->post_type );
+			$exists = $this->is_included_post_type( $post->post_type );
 		}
 
 		if ( $restore ) {
@@ -3574,7 +3585,7 @@ class AS_Content_Stream {
 		self::create_processing_queue_table();
 
 		$post_type = $this->get_post_type_from_site( (int) $blocked_job->source_blog_id, $source_post_id );
-		if ( '' === $post_type || ! $this->is_streamable_post_type( $post_type ) ) {
+		if ( '' === $post_type || ! $this->is_included_post_type( $post_type ) ) {
 			return 0;
 		}
 
@@ -4261,6 +4272,51 @@ class AS_Content_Stream {
 				'DELETE FROM ' . self::queue_table_name() . ' WHERE action = %s AND status <> %s',
 				'discover',
 				'complete'
+			)
+		);
+	}
+
+	/**
+	 * Clear open queue and processing work for post types no longer included.
+	 *
+	 * @return void
+	 */
+	private function clear_excluded_post_type_work() {
+		global $wpdb;
+
+		self::create_queue_table();
+		self::create_processing_queue_table();
+
+		$post_types = $this->get_discoverable_source_post_types();
+		if ( empty( $post_types ) ) {
+			$wpdb->query(
+				$wpdb->prepare(
+					'DELETE FROM ' . self::queue_table_name() . ' WHERE status <> %s',
+					'complete'
+				)
+			);
+			$wpdb->query(
+				$wpdb->prepare(
+					'DELETE FROM ' . self::processing_queue_table_name() . ' WHERE status <> %s',
+					'complete'
+				)
+			);
+			return;
+		}
+
+		$placeholders = implode( ',', array_fill( 0, count( $post_types ), '%s' ) );
+		$queue_args = array_merge( array( 'complete' ), $post_types );
+		$wpdb->query(
+			$wpdb->prepare(
+				'DELETE FROM ' . self::queue_table_name() . " WHERE status <> %s AND post_type NOT IN ({$placeholders})",
+				$queue_args
+			)
+		);
+		$processing_args = array_merge( array( 'complete' ), $post_types );
+		$wpdb->query(
+			$wpdb->prepare(
+				'DELETE FROM ' . self::processing_queue_table_name() . " WHERE status <> %s AND post_type NOT IN ({$placeholders})",
+				$processing_args
 			)
 		);
 	}
@@ -5010,7 +5066,7 @@ class AS_Content_Stream {
 			return;
 		}
 
-		if ( ! $this->is_streamable_post_type( $post->post_type ) ) {
+		if ( ! $this->is_included_post_type( $post->post_type ) ) {
 			return;
 		}
 
@@ -5035,7 +5091,7 @@ class AS_Content_Stream {
 			return;
 		}
 
-		if ( ! $this->is_streamable_post_type( $post->post_type ) ) {
+		if ( ! $this->is_included_post_type( $post->post_type ) ) {
 			return;
 		}
 
@@ -5054,7 +5110,7 @@ class AS_Content_Stream {
 			return;
 		}
 
-		if ( ! $this->is_streamable_post_type( $post->post_type ) ) {
+		if ( ! $this->is_included_post_type( $post->post_type ) ) {
 			return;
 		}
 
@@ -5276,12 +5332,42 @@ class AS_Content_Stream {
 		$saved = is_array( $saved ) ? $saved : array();
 		$settings = array();
 
-		foreach ( $this->get_discoverable_source_post_types() as $post_type ) {
+		foreach ( $this->get_available_source_post_types() as $post_type ) {
 			$status = isset( $saved[ $post_type ] ) ? sanitize_key( $saved[ $post_type ] ) : $this->get_default_post_type_stream_status( $post_type );
 			$settings[ $post_type ] = in_array( $status, array( 'draft', 'publish' ), true ) ? $status : $this->get_default_post_type_stream_status( $post_type );
 		}
 
 		return $settings;
+	}
+
+	/**
+	 * Get post type include settings.
+	 *
+	 * @return array<string,int>
+	 */
+	private function get_post_type_include_settings() {
+		$saved = get_site_option( self::OPTION_POST_TYPE_INCLUDE, array() );
+		$saved = is_array( $saved ) ? $saved : array();
+		$settings = array();
+
+		foreach ( $this->get_available_source_post_types() as $post_type ) {
+			$settings[ $post_type ] = array_key_exists( $post_type, $saved ) ? (int) ! empty( $saved[ $post_type ] ) : 1;
+		}
+
+		return $settings;
+	}
+
+	/**
+	 * Determine whether a post type is included in Content Stream.
+	 *
+	 * @param string $post_type Post type.
+	 * @return bool
+	 */
+	private function is_included_post_type( $post_type ) {
+		$post_type = sanitize_key( $post_type );
+		$settings = $this->get_post_type_include_settings();
+
+		return isset( $settings[ $post_type ] ) && ! empty( $settings[ $post_type ] );
 	}
 
 	/**
@@ -6221,10 +6307,10 @@ class AS_Content_Stream {
 	 *
 	 * @return array<string,int>
 	 */
-	private function get_published_source_counts_by_post_type() {
+	private function get_published_source_counts_by_post_type( $included_only = true ) {
 		global $wpdb;
 
-		$post_types = $this->get_discoverable_source_post_types();
+		$post_types = $included_only ? $this->get_discoverable_source_post_types() : $this->get_available_source_post_types();
 		$counts = array_fill_keys( $post_types, 0 );
 		if ( empty( $post_types ) ) {
 			return $counts;
@@ -6255,7 +6341,7 @@ class AS_Content_Stream {
 	 *
 	 * @return string[]
 	 */
-	private function get_discoverable_source_post_types() {
+	private function get_available_source_post_types() {
 		$restore = get_current_blog_id() !== get_main_site_id();
 		if ( $restore ) {
 			switch_to_blog( get_main_site_id() );
@@ -6272,6 +6358,24 @@ class AS_Content_Stream {
 				array_map( 'sanitize_key', (array) $post_types ),
 				function ( $post_type ) {
 					return $this->is_streamable_post_type( $post_type );
+				}
+			)
+		);
+	}
+
+	/**
+	 * Get included public source post types currently configured for streaming.
+	 *
+	 * @return string[]
+	 */
+	private function get_discoverable_source_post_types() {
+		$include_settings = $this->get_post_type_include_settings();
+
+		return array_values(
+			array_filter(
+				$this->get_available_source_post_types(),
+				static function ( $post_type ) use ( $include_settings ) {
+					return ! empty( $include_settings[ $post_type ] );
 				}
 			)
 		);
