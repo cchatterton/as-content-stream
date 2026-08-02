@@ -119,6 +119,7 @@ class AS_Content_Stream {
 		add_action( 'admin_post_as_content_stream_run_link', array( $this, 'run_link' ) );
 		add_action( 'admin_post_as_content_stream_test_tick', array( $this, 'run_test_tick' ) );
 		add_action( 'admin_init', array( $this, 'normalize_skipped_processing_jobs' ) );
+		add_action( 'admin_init', array( $this, 'normalize_streaming_map_rows' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ) );
 		add_action( 'wp_ajax_as_content_stream_heartbeat', array( $this, 'ajax_heartbeat' ) );
 		add_action( self::CRON_HOOK, array( $this, 'process_tick' ) );
@@ -253,6 +254,7 @@ class AS_Content_Stream {
 			KEY target_post (target_blog_id, target_post_id),
 			KEY lookup_source_id (source_post_id),
 			KEY lookup_target_id (target_post_id),
+			KEY concrete_map (source_blog_id, source_post_id, source_post_type, target_blog_id, target_language),
 			KEY source_slug (source_slug, source_post_type, target_language)
 		) {$charset_collate};";
 
@@ -742,14 +744,13 @@ class AS_Content_Stream {
 					<th><?php esc_html_e( 'Source', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Post Title', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Post Name', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Original Post Name', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Post Type', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Control', 'as-content-stream' ); ?></th>
 				</tr>
 			</thead>
 			<tbody>
 				<?php if ( empty( $items ) ) : ?>
-					<tr><td colspan="10"><?php esc_html_e( 'No queue items yet.', 'as-content-stream' ); ?></td></tr>
+					<tr><td colspan="9"><?php esc_html_e( 'No queue items yet.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
 				<?php foreach ( $items as $item ) : ?>
 					<?php
@@ -771,7 +772,6 @@ class AS_Content_Stream {
 							<?php endif; ?>
 						</td>
 						<td><?php echo esc_html( isset( $payload['post_name'] ) ? $payload['post_name'] : '' ); ?></td>
-						<td><?php echo esc_html( isset( $payload['original_post_name'] ) ? $payload['original_post_name'] : '' ); ?></td>
 						<td><?php echo esc_html( $item->post_type ); ?></td>
 						<td>
 							<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_run_queue_item' ) ); ?>">
@@ -848,7 +848,8 @@ class AS_Content_Stream {
 					<th><?php esc_html_e( 'Source', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Post Title', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Post Type', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Destination', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Destination Site', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Destination Post', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Language', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Attempts', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Duration', 'as-content-stream' ); ?></th>
@@ -858,14 +859,15 @@ class AS_Content_Stream {
 			</thead>
 			<tbody>
 				<?php if ( empty( $items ) ) : ?>
-					<tr><td colspan="15"><?php esc_html_e( 'No processing jobs yet.', 'as-content-stream' ); ?></td></tr>
+					<tr><td colspan="16"><?php esc_html_e( 'No processing jobs yet.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
 				<?php foreach ( $items as $item ) : ?>
 					<?php
 					$payload = $this->decode_queue_payload( $item->payload );
 					$source_url = $this->source_edit_url( (int) $item->source_blog_id, (int) $item->source_post_id );
-					$target_url = $this->destination_edit_url( (int) $item->target_blog_id, sanitize_key( $item->post_type ), $payload );
-					$target_url = $target_url ? $target_url : $this->site_admin_url( (int) $item->target_blog_id );
+					$post_type_url = $this->post_type_list_url( (int) $item->source_blog_id, sanitize_key( $item->post_type ), sanitize_key( $item->target_language ) );
+					$destination_post_id = $this->destination_post_id_for_processing_item( $item, $payload );
+					$destination_post_url = $destination_post_id ? $this->source_edit_url( (int) $item->target_blog_id, $destination_post_id ) : '';
 					$is_blocked = 'blocked' === sanitize_key( $item->status ) || ! empty( $item->blocked_by );
 					$post_title = isset( $payload['post_title'] ) ? $payload['post_title'] : $this->get_post_title_from_site( (int) $item->source_blog_id, (int) $item->source_post_id );
 					?>
@@ -884,8 +886,15 @@ class AS_Content_Stream {
 								<?php echo esc_html( $post_title ? $post_title : '-' ); ?>
 							<?php endif; ?>
 						</td>
-						<td><?php echo esc_html( sanitize_key( $item->post_type ) ); ?></td>
-						<td><a href="<?php echo esc_url( $target_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $this->site_label( (int) $item->target_blog_id ) ); ?></a></td>
+						<td><a href="<?php echo esc_url( $post_type_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( sanitize_key( $item->post_type ) ); ?></a></td>
+						<td><a href="<?php echo esc_url( $this->site_admin_url( (int) $item->target_blog_id ) ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $this->site_label( (int) $item->target_blog_id ) ); ?></a></td>
+						<td>
+							<?php if ( $destination_post_id && $destination_post_url ) : ?>
+								<a href="<?php echo esc_url( $destination_post_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( '#' . $destination_post_id ); ?></a>
+							<?php else : ?>
+								<?php echo esc_html( '-' ); ?>
+							<?php endif; ?>
+						</td>
 						<td><?php echo esc_html( $item->target_language ); ?></td>
 						<td><?php echo esc_html( (int) $item->attempts ); ?></td>
 						<td><?php echo esc_html( (int) $item->duration_ms . 'ms' ); ?></td>
@@ -937,7 +946,8 @@ class AS_Content_Stream {
 					<th><?php esc_html_e( 'Source', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Post Title', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Post Type', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Destination', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Destination Site', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Destination Post', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Language', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Attempts', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Duration', 'as-content-stream' ); ?></th>
@@ -946,14 +956,15 @@ class AS_Content_Stream {
 			</thead>
 			<tbody>
 				<?php if ( empty( $items ) ) : ?>
-					<tr><td colspan="13"><?php esc_html_e( 'No completed processing jobs yet.', 'as-content-stream' ); ?></td></tr>
+					<tr><td colspan="14"><?php esc_html_e( 'No completed processing jobs yet.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
 				<?php foreach ( $items as $item ) : ?>
 					<?php
 					$payload = $this->decode_queue_payload( $item->payload );
 					$source_url = $this->source_edit_url( (int) $item->source_blog_id, (int) $item->source_post_id );
-					$target_url = $this->destination_edit_url( (int) $item->target_blog_id, sanitize_key( $item->post_type ), $payload );
-					$target_url = $target_url ? $target_url : $this->site_admin_url( (int) $item->target_blog_id );
+					$post_type_url = $this->post_type_list_url( (int) $item->source_blog_id, sanitize_key( $item->post_type ), sanitize_key( $item->target_language ) );
+					$destination_post_id = $this->destination_post_id_for_processing_item( $item, $payload );
+					$destination_post_url = $destination_post_id ? $this->source_edit_url( (int) $item->target_blog_id, $destination_post_id ) : '';
 					$post_title = isset( $payload['post_title'] ) ? $payload['post_title'] : $this->get_post_title_from_site( (int) $item->source_blog_id, (int) $item->source_post_id );
 					?>
 					<tr>
@@ -970,8 +981,15 @@ class AS_Content_Stream {
 								<?php echo esc_html( $post_title ? $post_title : '-' ); ?>
 							<?php endif; ?>
 						</td>
-						<td><?php echo esc_html( sanitize_key( $item->post_type ) ); ?></td>
-						<td><a href="<?php echo esc_url( $target_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $this->site_label( (int) $item->target_blog_id ) ); ?></a></td>
+						<td><a href="<?php echo esc_url( $post_type_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( sanitize_key( $item->post_type ) ); ?></a></td>
+						<td><a href="<?php echo esc_url( $this->site_admin_url( (int) $item->target_blog_id ) ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $this->site_label( (int) $item->target_blog_id ) ); ?></a></td>
+						<td>
+							<?php if ( $destination_post_id && $destination_post_url ) : ?>
+								<a href="<?php echo esc_url( $destination_post_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( '#' . $destination_post_id ); ?></a>
+							<?php else : ?>
+								<?php echo esc_html( '-' ); ?>
+							<?php endif; ?>
+						</td>
 						<td><?php echo esc_html( $item->target_language ); ?></td>
 						<td><?php echo esc_html( (int) $item->attempts ); ?></td>
 						<td><?php echo esc_html( (int) $item->duration_ms . 'ms' ); ?></td>
@@ -1016,19 +1034,21 @@ class AS_Content_Stream {
 					<th><?php esc_html_e( 'Source', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Post Title', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Post Type', 'as-content-stream' ); ?></th>
-					<th><?php esc_html_e( 'Destination', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Destination Site', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Destination Post', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Language', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Control', 'as-content-stream' ); ?></th>
 				</tr>
 			</thead>
 			<tbody>
 				<?php if ( empty( $links ) ) : ?>
-					<tr><td colspan="11"><?php esc_html_e( 'No streaming map rows found.', 'as-content-stream' ); ?></td></tr>
+					<tr><td colspan="12"><?php esc_html_e( 'No streaming map rows found.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
 				<?php foreach ( $links as $link ) : ?>
 					<?php
 					$source_url = $this->source_edit_url( (int) $link->source_blog_id, (int) $link->source_post_id );
 					$target_url = $this->source_edit_url( (int) $link->target_blog_id, (int) $link->target_post_id );
+					$post_type_url = $this->post_type_list_url( (int) $link->source_blog_id, sanitize_key( $link->source_post_type ), sanitize_key( $link->target_language ) );
 					$post_title = $this->get_post_title_from_site( (int) $link->source_blog_id, (int) $link->source_post_id );
 					?>
 					<tr>
@@ -1045,8 +1065,9 @@ class AS_Content_Stream {
 								<?php echo esc_html( $post_title ? $post_title : '-' ); ?>
 							<?php endif; ?>
 						</td>
-						<td><?php echo esc_html( sanitize_key( $link->source_post_type ) ); ?></td>
-						<td><a href="<?php echo esc_url( $target_url ? $target_url : $this->site_admin_url( (int) $link->target_blog_id ) ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $this->site_label( (int) $link->target_blog_id ) . ' #' . (int) $link->target_post_id ); ?></a></td>
+						<td><a href="<?php echo esc_url( $post_type_url ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( sanitize_key( $link->source_post_type ) ); ?></a></td>
+						<td><a href="<?php echo esc_url( $this->site_admin_url( (int) $link->target_blog_id ) ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( $this->site_label( (int) $link->target_blog_id ) ); ?></a></td>
+						<td><a href="<?php echo esc_url( $target_url ? $target_url : $this->site_admin_url( (int) $link->target_blog_id ) ); ?>" target="_blank" rel="noopener noreferrer"><?php echo esc_html( '#' . (int) $link->target_post_id ); ?></a></td>
 						<td><?php echo esc_html( $link->target_language ); ?></td>
 						<td>
 							<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_run_link' ) ); ?>">
@@ -1941,11 +1962,13 @@ class AS_Content_Stream {
 		}
 
 		$matches = array_values(
-			array_filter(
-				array_map( 'absint', (array) $matches ),
-				function ( $post_id ) use ( $post_type, $target_language ) {
-					return $this->post_matches_target_language_current_site( $post_id, $post_type, $target_language );
-				}
+			array_unique(
+				array_filter(
+					array_map( 'absint', (array) $matches ),
+					function ( $post_id ) use ( $post_type, $target_language ) {
+						return $this->post_matches_target_language_current_site( $post_id, $post_type, $target_language );
+					}
+				)
 			)
 		);
 
@@ -2778,6 +2801,9 @@ class AS_Content_Stream {
 		$source_slug = isset( $payload['original_post_name'] ) && '' !== $payload['original_post_name'] ? sanitize_title( $payload['original_post_name'] ) : sanitize_title( isset( $payload['post_name'] ) ? $payload['post_name'] : '' );
 		$target_slug = $this->get_post_slug_from_site( (int) $job->target_blog_id, $destination_post_id );
 		$link = $this->get_link_for_source_target( $source_uuid, (int) $job->target_blog_id, sanitize_key( $job->target_language ) );
+		if ( ! $link && 'attachment' !== sanitize_key( $job->post_type ) ) {
+			$link = $this->get_link_for_concrete_map( (int) $job->source_blog_id, (int) $job->source_post_id, sanitize_key( $job->post_type ), (int) $job->target_blog_id, sanitize_key( $job->target_language ) );
+		}
 		if ( 'attachment' !== sanitize_key( $job->post_type ) ) {
 			$this->force_destination_post_draft( (int) $job->target_blog_id, $destination_post_id );
 		}
@@ -2802,6 +2828,7 @@ class AS_Content_Stream {
 
 		if ( $link ) {
 			$wpdb->update( self::links_table_name(), $data, array( 'id' => (int) $link->id ), $formats, array( '%d' ) );
+			$this->delete_duplicate_streaming_map_rows( (int) $link->id, $data );
 			return (int) $link->id;
 		}
 
@@ -2812,7 +2839,35 @@ class AS_Content_Stream {
 			array_merge( $formats, array( '%s' ) )
 		);
 
-		return (int) $wpdb->insert_id;
+		$link_id = (int) $wpdb->insert_id;
+		if ( $link_id ) {
+			$this->delete_duplicate_streaming_map_rows( $link_id, $data );
+		}
+
+		return $link_id;
+	}
+
+	/**
+	 * Delete duplicate map rows for the same concrete relationship.
+	 *
+	 * @param int                 $keep_id Link ID to keep.
+	 * @param array<string,mixed> $data Link data.
+	 * @return void
+	 */
+	private function delete_duplicate_streaming_map_rows( $keep_id, $data ) {
+		global $wpdb;
+
+		$wpdb->query(
+			$wpdb->prepare(
+				'DELETE FROM ' . self::links_table_name() . ' WHERE id <> %d AND source_blog_id = %d AND source_post_id = %d AND source_post_type = %s AND target_blog_id = %d AND target_language = %s',
+				$keep_id,
+				(int) $data['source_blog_id'],
+				(int) $data['source_post_id'],
+				sanitize_key( $data['source_post_type'] ),
+				(int) $data['target_blog_id'],
+				sanitize_key( $data['target_language'] )
+			)
+		);
 	}
 
 	/**
@@ -2913,6 +2968,33 @@ class AS_Content_Stream {
 			$wpdb->prepare(
 				'SELECT * FROM ' . self::links_table_name() . ' WHERE source_uuid = %s AND target_blog_id = %d AND target_language = %s LIMIT 1',
 				sanitize_text_field( $source_uuid ),
+				$target_blog_id,
+				sanitize_key( $target_language )
+			)
+		);
+	}
+
+	/**
+	 * Find a link for a concrete source/destination map.
+	 *
+	 * @param int    $source_blog_id Source blog ID.
+	 * @param int    $source_post_id Source post ID.
+	 * @param string $post_type Source post type.
+	 * @param int    $target_blog_id Target blog ID.
+	 * @param string $target_language Target language.
+	 * @return object|null
+	 */
+	private function get_link_for_concrete_map( $source_blog_id, $source_post_id, $post_type, $target_blog_id, $target_language ) {
+		global $wpdb;
+
+		self::create_links_table();
+
+		return $wpdb->get_row(
+			$wpdb->prepare(
+				'SELECT * FROM ' . self::links_table_name() . ' WHERE source_blog_id = %d AND source_post_id = %d AND source_post_type = %s AND target_blog_id = %d AND target_language = %s ORDER BY updated_at DESC, id DESC LIMIT 1',
+				$source_blog_id,
+				$source_post_id,
+				sanitize_key( $post_type ),
 				$target_blog_id,
 				sanitize_key( $target_language )
 			)
@@ -3210,6 +3292,35 @@ class AS_Content_Stream {
 			array( 'status' => 'skipped' ),
 			array( '%s', '%s', '%s' ),
 			array( '%s' )
+		);
+	}
+
+	/**
+	 * Collapse duplicate Streaming Map rows into the newest current relationship.
+	 *
+	 * @return void
+	 */
+	public function normalize_streaming_map_rows() {
+		if ( ! is_multisite() || ! is_main_site() || ! current_user_can( 'manage_options' ) ) {
+			return;
+		}
+
+		global $wpdb;
+		self::create_links_table();
+
+		$table = self::links_table_name();
+		$wpdb->query(
+			"DELETE older FROM {$table} older
+			INNER JOIN {$table} newer
+				ON newer.source_blog_id = older.source_blog_id
+				AND newer.source_post_id = older.source_post_id
+				AND newer.source_post_type = older.source_post_type
+				AND newer.target_blog_id = older.target_blog_id
+				AND newer.target_language = older.target_language
+				AND (
+					newer.updated_at > older.updated_at
+					OR (newer.updated_at = older.updated_at AND newer.id > older.id)
+				)"
 		);
 	}
 
@@ -3816,10 +3927,59 @@ class AS_Content_Stream {
 	 * Get an admin URL for a site.
 	 *
 	 * @param int $blog_id Blog ID.
+	 * @param string $path Optional admin path.
 	 * @return string
 	 */
-	private function site_admin_url( $blog_id ) {
-		return get_admin_url( $blog_id );
+	private function site_admin_url( $blog_id, $path = '' ) {
+		return get_admin_url( $blog_id, $path );
+	}
+
+	/**
+	 * Get admin list URL for a post type and language on a site.
+	 *
+	 * @param int    $blog_id Blog ID.
+	 * @param string $post_type Post type.
+	 * @param string $language Language code.
+	 * @return string
+	 */
+	private function post_type_list_url( $blog_id, $post_type, $language ) {
+		return add_query_arg(
+			array(
+				'post_status' => 'all',
+				'post_type'   => sanitize_key( $post_type ),
+				'lang'        => sanitize_key( $language ),
+			),
+			$this->site_admin_url( $blog_id, 'edit.php' )
+		);
+	}
+
+	/**
+	 * Get a processing row's destination post ID if one is known.
+	 *
+	 * @param object              $item Processing row.
+	 * @param array<string,mixed> $payload Processing payload.
+	 * @return int
+	 */
+	private function destination_post_id_for_processing_item( $item, $payload ) {
+		if ( ! empty( $item->link_id ) ) {
+			$link = $this->get_link( (int) $item->link_id );
+			if ( $link && ! empty( $link->target_post_id ) ) {
+				return (int) $link->target_post_id;
+			}
+		}
+
+		$restore = get_current_blog_id() !== (int) $item->target_blog_id;
+		if ( $restore ) {
+			switch_to_blog( (int) $item->target_blog_id );
+		}
+
+		$post_id = $this->find_destination_post_id( $item, $payload );
+
+		if ( $restore ) {
+			restore_current_blog();
+		}
+
+		return (int) $post_id;
 	}
 
 	/**

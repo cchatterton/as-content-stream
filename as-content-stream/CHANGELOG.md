@@ -2,6 +2,15 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.52 - 2026-08-02
+
+- Collapses Streaming Map rows by current source post, destination site, post type, and language instead of letting separate actions appear as duplicate map rows.
+- Cleans up duplicate Streaming Map rows on admin load and after future map writes.
+- Splits destination site and destination post ID into separate columns on Processing Queue, Log, and Streaming Map.
+- Links post type values to the matching post-type list view using the row's streaming language.
+- De-duplicates legacy destination match IDs before deciding a Discovery job has multiple legacy matches.
+- Removes Original Post Name from queue tables.
+
 ## 0.1.51 - 2026-08-02
 
 - Forces existing destination posts to draft when Discovery maps by legacy metadata or slug.
