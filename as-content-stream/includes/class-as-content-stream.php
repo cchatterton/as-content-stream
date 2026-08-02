@@ -5504,7 +5504,6 @@ class AS_Content_Stream {
 			'target_language'   => sanitize_key( $target_language ),
 			'mapped_published'  => 0,
 			'mapped_draft'      => 0,
-			'wrong_status'      => 0,
 			'not_mapped'        => 0,
 			'status'            => 'inactive',
 			'scanned_at'        => current_time( 'mysql', true ),
@@ -5544,10 +5543,6 @@ class AS_Content_Stream {
 			} else {
 				$base['mapped_draft']++;
 			}
-
-			if ( sanitize_key( $post->post_status ) !== $this->get_post_type_stream_status( $source_post_type ) ) {
-				$base['wrong_status']++;
-			}
 		}
 
 		if ( $restore ) {
@@ -5562,7 +5557,7 @@ class AS_Content_Stream {
 			}
 		}
 
-		if ( 0 !== (int) $base['wrong_status'] || 0 !== (int) $base['not_mapped'] ) {
+		if ( 0 !== (int) $base['not_mapped'] ) {
 			$base['status'] = 'needs_clean';
 		} else {
 			$base['status'] = 'healthy';

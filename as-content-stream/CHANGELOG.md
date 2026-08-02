@@ -2,6 +2,11 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.76 - 2026-08-02
+
+- Makes Sites & WPML Needs clean status depend only on visible Not Mapped content.
+- Removes the hidden wrong-status health flag from destination site snapshots.
+
 ## 0.1.75 - 2026-08-02
 
 - Removes Mapped Missing, Diff, Wrong Status, and Needs repair from Sites & WPML.
