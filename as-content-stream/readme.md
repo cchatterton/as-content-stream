@@ -1,7 +1,7 @@
 # Content Stream
 
 Author: AlphaSys
-Version: 0.1.73
+Version: 0.1.74
 Status: POC
 
 ## Purpose
@@ -13,7 +13,7 @@ Content Stream is a network-enabled WordPress plugin scaffold for multisite cont
 - Discovers sites where WPML is active.
 - Lists each site's own WPML language codes.
 - Shows cached destination health counts for expected, mapped published, mapped draft, mapped missing, diff, and not-mapped target-language content.
-- Adds CPT Settings for per-post-type stream status, defaulting to Draft except `impact`, which defaults to Publish.
+- Adds CPT Settings for per-post-type stream status, defaulting every post type to Draft until configured.
 - Records create, update, and delete content actions in a visible global queue.
 - Captures individual and bulk edits/trash actions on the core source site.
 - Splits queue visibility into Create Queue, Update Queue, and Delete Queue tabs.

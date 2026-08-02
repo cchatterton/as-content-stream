@@ -4935,7 +4935,9 @@ class AS_Content_Stream {
 	 * @return string
 	 */
 	private function get_default_post_type_stream_status( $post_type ) {
-		return 'impact' === sanitize_key( $post_type ) ? 'publish' : 'draft';
+		unset( $post_type );
+
+		return 'draft';
 	}
 
 	/**

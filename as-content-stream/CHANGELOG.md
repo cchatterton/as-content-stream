@@ -2,6 +2,11 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.74 - 2026-08-02
+
+- Removes the site-specific impact default from CPT Settings.
+- Defaults every post type to Draft until explicitly configured.
+
 ## 0.1.73 - 2026-08-02
 
 - Adds a CPT Settings tab for per-post-type stream status policy.
