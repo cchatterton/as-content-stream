@@ -1,7 +1,7 @@
 # Content Stream
 
 Author: AlphaSys
-Version: 0.1.83
+Version: 0.1.84
 Status: POC
 
 ## Purpose
@@ -14,6 +14,8 @@ Content Stream is a network-enabled WordPress plugin scaffold for multisite cont
 - Lists each site's own WPML language codes.
 - Shows cached destination health counts for mapped configured, mapped off-config, local content, and in-discovery target-language content.
 - Shows per-site, per-CPT reconciliation counts refreshed by Discovery.
+- Refreshes the cleaned site/post-type health row after a per-CPT Clean action.
+- Shows percent aligned in each WPML-active site header.
 - Shows Discovery Last Run on Sites & WPML.
 - Shows destination sites as internal tabs on Sites & WPML.
 - Links Sites & WPML post type rows to the destination site's filtered admin list.

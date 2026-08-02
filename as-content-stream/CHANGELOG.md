@@ -2,6 +2,11 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.84 - 2026-08-03
+
+- Refreshes the cleaned site/post-type health row after a per-CPT Clean action.
+- Adds a percent-aligned metric to each WPML-active Sites & WPML site header.
+
 ## 0.1.83 - 2026-08-03
 
 - Queues Delete Queue work from active Streaming Map rows when a CPT is excluded.

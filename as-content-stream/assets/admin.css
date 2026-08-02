@@ -293,6 +293,16 @@
 	gap: 6px;
 }
 
+.as-content-site-tab-percent {
+	border-left: 1px solid #c3c4c7;
+	color: #50575e;
+	font-size: 11px;
+	font-weight: 600;
+	line-height: 1;
+	margin-left: 2px;
+	padding-left: 7px;
+}
+
 .as-content-site-tab.is-active {
 	background: #fff;
 	border-color: #2271b1;

@@ -623,9 +623,18 @@ class AS_Content_Stream {
 		</div>
 		<div class="as-content-site-tabs" role="tablist" aria-label="<?php esc_attr_e( 'Sites', 'as-content-stream' ); ?>">
 			<?php foreach ( $sites as $index => $site ) : ?>
+				<?php
+				$tab_blog_id = (int) $site['blog_id'];
+				$tab_health = isset( $site_health[ $tab_blog_id ] ) ? $site_health[ $tab_blog_id ] : array();
+				$tab_post_type_rows = isset( $tab_health['post_types'] ) && is_array( $tab_health['post_types'] ) ? $tab_health['post_types'] : array();
+				$tab_aligned_percent = $this->site_aligned_percent_from_post_type_rows( $tab_post_type_rows );
+				?>
 				<button type="button" class="button button-secondary as-content-site-tab <?php echo 0 === (int) $index ? 'is-active' : ''; ?>" role="tab" aria-selected="<?php echo 0 === (int) $index ? 'true' : 'false'; ?>" aria-controls="as-content-site-<?php echo esc_attr( (int) $site['blog_id'] ); ?>" data-as-site-tab="<?php echo esc_attr( (int) $site['blog_id'] ); ?>">
 					<span class="as-content-site-dot <?php echo esc_attr( ! empty( $site['wpml_active'] ) ? 'is-active' : 'is-inactive' ); ?>" aria-hidden="true"></span>
-					<?php echo esc_html( sprintf( '#%d %s', (int) $site['blog_id'], $site['name'] ) ); ?>
+					<span><?php echo esc_html( sprintf( '#%d %s', (int) $site['blog_id'], $site['name'] ) ); ?></span>
+					<?php if ( ! empty( $site['wpml_active'] ) ) : ?>
+						<span class="as-content-site-tab-percent <?php echo 100 === $tab_aligned_percent ? 'as-content-row-status-aligned' : ''; ?>"><?php echo esc_html( $tab_aligned_percent . '%' ); ?></span>
+					<?php endif; ?>
 				</button>
 			<?php endforeach; ?>
 		</div>
@@ -4677,7 +4686,11 @@ class AS_Content_Stream {
 			restore_current_blog();
 		}
 
-		$this->refresh_site_health_snapshot( $blog_id );
+		if ( '' !== $post_type ) {
+			$this->refresh_site_health_post_type_snapshot( $blog_id, $post_type );
+		} else {
+			$this->refresh_site_health_snapshot( $blog_id );
+		}
 
 		wp_safe_redirect( $this->admin_url( array( 'tab' => 'sites', 'site_cleaned' => 1 ) ) );
 		exit;
@@ -6107,6 +6120,102 @@ class AS_Content_Stream {
 				return;
 			}
 		}
+	}
+
+	/**
+	 * Refresh one post type row inside a destination site health snapshot.
+	 *
+	 * @param int    $blog_id Blog ID.
+	 * @param string $post_type Post type.
+	 * @return void
+	 */
+	private function refresh_site_health_post_type_snapshot( $blog_id, $post_type ) {
+		$post_type = sanitize_key( $post_type );
+		if ( '' === $post_type ) {
+			$this->refresh_site_health_snapshot( $blog_id );
+			return;
+		}
+
+		$sites = $this->get_destination_sites_for_scan();
+		$language_counts = $this->get_language_counts( $sites );
+		$target_language = $this->get_effective_target_language( $language_counts );
+
+		foreach ( $sites as $site ) {
+			if ( (int) $site['blog_id'] !== (int) $blog_id ) {
+				continue;
+			}
+
+			$snapshots = $this->get_site_health_snapshots();
+			$fresh_snapshot = $this->build_site_health_snapshot( $site, $target_language );
+			$current_snapshot = isset( $snapshots[ (int) $blog_id ] ) ? $snapshots[ (int) $blog_id ] : $fresh_snapshot;
+			if ( isset( $fresh_snapshot['post_types'][ $post_type ] ) ) {
+				if ( ! isset( $current_snapshot['post_types'] ) || ! is_array( $current_snapshot['post_types'] ) ) {
+					$current_snapshot['post_types'] = array();
+				}
+				$current_snapshot['post_types'][ $post_type ] = $fresh_snapshot['post_types'][ $post_type ];
+				$current_snapshot['scanned_at'] = isset( $fresh_snapshot['scanned_at'] ) ? $fresh_snapshot['scanned_at'] : current_time( 'mysql', true );
+				$current_snapshot['status'] = $this->site_health_status_from_post_type_rows( $current_snapshot['post_types'] );
+				$this->save_site_health_snapshot( $blog_id, $current_snapshot );
+				return;
+			}
+
+			$this->save_site_health_snapshot( $blog_id, $fresh_snapshot );
+			return;
+		}
+	}
+
+	/**
+	 * Calculate a site-level status from post type health rows.
+	 *
+	 * @param array<string,array<string,mixed>> $post_type_rows Post type rows.
+	 * @return string
+	 */
+	private function site_health_status_from_post_type_rows( $post_type_rows ) {
+		foreach ( (array) $post_type_rows as $row ) {
+			if ( ! is_array( $row ) ) {
+				continue;
+			}
+
+			$status = isset( $row['status'] ) ? sanitize_key( $row['status'] ) : 'not_aligned';
+			if ( 'aligned' !== $status && 'inactive' !== $status ) {
+				return 'needs_clean';
+			}
+		}
+
+		return 'healthy';
+	}
+
+	/**
+	 * Calculate aligned percentage from post type health rows.
+	 *
+	 * @param array<string,array<string,mixed>> $post_type_rows Post type rows.
+	 * @return int
+	 */
+	private function site_aligned_percent_from_post_type_rows( $post_type_rows ) {
+		$total = 0;
+		$aligned = 0;
+
+		foreach ( (array) $post_type_rows as $row ) {
+			if ( ! is_array( $row ) ) {
+				continue;
+			}
+
+			$status = isset( $row['status'] ) ? sanitize_key( $row['status'] ) : '';
+			if ( 'inactive' === $status ) {
+				continue;
+			}
+
+			$total++;
+			if ( 'aligned' === $status ) {
+				$aligned++;
+			}
+		}
+
+		if ( 0 === $total ) {
+			return 0;
+		}
+
+		return (int) round( ( $aligned / $total ) * 100 );
 	}
 
 	/**
