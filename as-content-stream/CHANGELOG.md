@@ -2,6 +2,12 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.77 - 2026-08-02
+
+- Makes Discovery use the same valid-destination check as Sites & WPML health.
+- Invalidates broken active Streaming Map rows when the destination post is missing, trashed, the wrong post type, or outside the streaming language.
+- Ensures stale map rows no longer allow a source item to appear fully discovered.
+
 ## 0.1.76 - 2026-08-02
 
 - Makes Sites & WPML Needs clean status depend only on visible Not Mapped content.

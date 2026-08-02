@@ -1,7 +1,7 @@
 # Content Stream
 
 Author: AlphaSys
-Version: 0.1.76
+Version: 0.1.77
 Status: POC
 
 ## Purpose
@@ -39,6 +39,7 @@ Content Stream is a network-enabled WordPress plugin scaffold for multisite cont
 - Queue-style tables expose Job IDs and use Post Title as the source edit link.
 - Discovery uses legacy WFC Push Post metadata first, then slug/language matching, then blocks behind a normal create job when destination content is missing.
 - Discovery only creates child processing jobs for destination sites missing from the Streaming Map.
+- Discovery validates Streaming Map rows against real destination posts before counting a source as mapped.
 - Adds per-site Clean controls that force mapped destination content to the configured CPT stream status and move not-mapped target-language content to Trash.
 - Links source and destination sites from the Processing Queue and Log tabs.
 - Creates/updates/trashes destination posts from processing jobs with stream identifiers and the integration author.
