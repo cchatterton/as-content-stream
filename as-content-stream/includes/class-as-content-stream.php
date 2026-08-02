@@ -595,7 +595,7 @@ class AS_Content_Stream {
 				</table>
 				<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_rerun_discovery' ) ); ?>">
 					<?php wp_nonce_field( self::NONCE_QUEUE ); ?>
-					<?php submit_button( __( 'Re-run Discovery', 'as-content-stream' ), 'secondary', 'submit', false ); ?>
+					<?php submit_button( __( 'Run Discovery', 'as-content-stream' ), 'secondary', 'submit', false ); ?>
 				</form>
 			</div>
 			<div class="as-content-panel">
@@ -1677,6 +1677,9 @@ class AS_Content_Stream {
 			if ( ! empty( $payload['source_uuid'] ) ) {
 				$link = $this->get_link_for_source_target( sanitize_text_field( $payload['source_uuid'] ), (int) $target['blog_id'], sanitize_key( $target_language ) );
 				$link_id = $link ? (int) $link->id : 0;
+				if ( 'discover' === sanitize_key( $source_item->action ) && $link_id && 'active' === sanitize_key( $link->status ) ) {
+					continue;
+				}
 			}
 
 			$inserted = $wpdb->insert(

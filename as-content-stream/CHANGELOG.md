@@ -2,6 +2,11 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.69 - 2026-08-02
+
+- Skips already mapped destination sites when a Discovery parent job is exploded into processing jobs.
+- Renames the Network Status Discovery button to Run Discovery.
+
 ## 0.1.68 - 2026-08-02
 
 - Adds a Network Status Difference row for Streaming Map reconciliation.

@@ -1,7 +1,7 @@
 # Content Stream
 
 Author: AlphaSys
-Version: 0.1.68
+Version: 0.1.69
 Status: POC
 
 ## Purpose
@@ -17,7 +17,7 @@ Content Stream is a network-enabled WordPress plugin scaffold for multisite cont
 - Splits queue visibility into Create Queue, Update Queue, and Delete Queue tabs.
 - Shows a temporary Discovery Queue tab when published source content is not fully mapped.
 - Limits Discovery to public post types currently registered on the core site.
-- Provides a manual Re-run Discovery button to clear and rebuild Discovery queue rows.
+- Provides a manual Run Discovery button to clear and rebuild Discovery queue rows.
 - Runs Discovery only on plugin activation or a manual Re-run Discovery click.
 - Shows all-tab queue summary counts in Network Status.
 - Shows a Streaming Map reconciliation difference in Network Status.
@@ -35,6 +35,7 @@ Content Stream is a network-enabled WordPress plugin scaffold for multisite cont
 - Adds manual Delete controls to Discovery, Create, Update, and Delete Queue rows.
 - Queue-style tables expose Job IDs and use Post Title as the source edit link.
 - Discovery uses legacy WFC Push Post metadata first, then slug/language matching, then blocks behind a normal create job when destination content is missing.
+- Discovery only creates child processing jobs for destination sites missing from the Streaming Map.
 - Links source and destination sites from the Processing Queue and Log tabs.
 - Creates/updates/trashes destination posts from processing jobs with stream identifiers and the integration author.
 - Forces destination posts to draft during creates, updates, and existing destination mapping.
