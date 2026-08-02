@@ -1,7 +1,7 @@
 # Content Stream
 
 Author: AlphaSys
-Version: 0.1.53
+Version: 0.1.54
 Status: POC
 
 ## Purpose
@@ -40,6 +40,8 @@ Content Stream is a network-enabled WordPress plugin scaffold for multisite cont
 - Adds manual Run and Delete controls to every item in the Processing Queue.
 - Tracks source/destination relationships in a dedicated links table with an interactive Streaming Map tab.
 - Keeps Streaming Map rows collapsed to one current relationship per source post, destination site, post type, and language.
+- Reconciles Streaming Map rows out of the active map when a destination site no longer has WPML active.
+- Log supports post ID lookup across retained completed jobs by source or destination post ID.
 - Copies featured images into destination uploads and indexes them as destination attachments.
 - Blocks jobs on missing related-post meta dependencies and creates priority blocker jobs.
 - Supports WordPress-native updates from GitHub releases.
@@ -76,7 +78,7 @@ as-content-stream/
 - Target language defaults to the most common language across destination WPML sites until manually saved.
 - Automatic cron processing is toggled from the Heartbeat tile.
 - Processing Queue shows pending, in-progress, blocked, and failed per-site jobs with manual Run controls; Log shows completed processing jobs only.
-- Log shows the latest 100 completed jobs and can be cleared from the Log tab.
+- Log shows the latest 100 completed jobs, supports post ID lookup, and can be cleared from the Log tab.
 
 ## Future Considerations
 

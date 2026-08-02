@@ -2,6 +2,15 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.54 - 2026-08-02
+
+- Reconciles active Streaming Map rows when a destination site no longer has WPML active by marking those rows inactive.
+- Shows only active rows in Streaming Map so the map reflects currently managed sync relationships.
+- Lets Discovery reactivate an inactive map row when WPML is re-enabled and the mapped destination post still exists.
+- Refreshes Discovery once when the active WPML destination target set changes.
+- Counts only active Streaming Map rows in Settings dashboard totals.
+- Adds post ID lookup to Log, matching retained completed jobs by source post ID or mapped destination post ID.
+
 ## 0.1.53 - 2026-08-02
 
 - Fixed post type links in Processing Queue, Log, and Streaming Map to open the destination site's list view using the row's streaming language.

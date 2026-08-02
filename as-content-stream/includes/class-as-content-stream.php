@@ -17,6 +17,7 @@ class AS_Content_Stream {
 	const OPTION_CAPTURE_STATUS  = 'as_content_stream_capture_status';
 	const OPTION_PROCESSING_ENABLED = 'as_content_stream_processing_enabled';
 	const OPTION_TELEMETRY       = 'as_content_stream_telemetry';
+	const OPTION_TARGET_SIGNATURE = 'as_content_stream_target_signature';
 	const NONCE_SETTINGS         = 'as_content_stream_settings';
 	const NONCE_QUEUE            = 'as_content_stream_queue';
 	const NONCE_LOG              = 'as_content_stream_log';
@@ -926,10 +927,21 @@ class AS_Content_Stream {
 	 * @return void
 	 */
 	private function render_log_tab() {
-		$items = $this->get_processing_queue_items( true );
+		$lookup_id = isset( $_GET['lookup_id'] ) ? absint( $_GET['lookup_id'] ) : 0;
+		$items = $this->get_processing_queue_items( true, $lookup_id );
 		?>
 		<div class="as-content-queue-actions">
-			<p><?php esc_html_e( 'Showing the latest 100 completed processing jobs.', 'as-content-stream' ); ?></p>
+			<form method="get" action="<?php echo esc_url( admin_url( 'admin.php' ) ); ?>" class="as-content-inline-form">
+				<input type="hidden" name="page" value="<?php echo esc_attr( self::PAGE_SLUG ); ?>">
+				<input type="hidden" name="tab" value="log">
+				<label for="as-content-log-lookup"><?php esc_html_e( 'Post ID lookup', 'as-content-stream' ); ?></label>
+				<input id="as-content-log-lookup" type="number" min="1" name="lookup_id" value="<?php echo esc_attr( $lookup_id ? $lookup_id : '' ); ?>">
+				<?php submit_button( __( 'Find', 'as-content-stream' ), 'secondary', 'submit', false ); ?>
+				<?php if ( $lookup_id ) : ?>
+					<a class="button" href="<?php echo esc_url( $this->admin_url( array( 'tab' => 'log' ) ) ); ?>"><?php esc_html_e( 'Clear', 'as-content-stream' ); ?></a>
+				<?php endif; ?>
+			</form>
+			<p><?php echo esc_html( $lookup_id ? __( 'Showing completed processing jobs where that ID is source or destination.', 'as-content-stream' ) : __( 'Showing the latest 100 completed processing jobs.', 'as-content-stream' ) ); ?></p>
 			<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_clear_log' ) ); ?>">
 				<?php wp_nonce_field( self::NONCE_LOG ); ?>
 				<?php submit_button( __( 'Clear Log', 'as-content-stream' ), 'secondary', 'submit', false ); ?>
@@ -1541,6 +1553,19 @@ class AS_Content_Stream {
 			switch_to_blog( (int) $job->target_blog_id );
 		}
 
+		$mapped_id = $this->find_destination_post_id( $job, $payload );
+		if ( $mapped_id && 'trash' !== get_post_status( $mapped_id ) ) {
+			$link_id = $this->upsert_link( $job, (int) $mapped_id, $payload );
+			if ( $link_id ) {
+				$this->set_processing_job_link_id( (int) $job->id, $link_id );
+			}
+
+			if ( $restore ) {
+				restore_current_blog();
+			}
+			return $this->processing_result( 'complete', sprintf( __( 'Existing destination mapped from Streaming Map memory and forced to draft. #%d', 'as-content-stream' ), (int) $mapped_id ) );
+		}
+
 		$legacy_id = $this->find_legacy_destination_post_id( $job, $payload );
 		if ( is_wp_error( $legacy_id ) ) {
 			if ( $restore ) {
@@ -1563,7 +1588,7 @@ class AS_Content_Stream {
 			}
 		}
 
-		$slug_id = $this->find_destination_post_id( $job, $payload );
+		$slug_id = $this->find_destination_post_by_slug( $job, $payload );
 		if ( $slug_id ) {
 			if ( 'trash' !== get_post_status( $slug_id ) ) {
 				$link_id = $this->upsert_link( $job, (int) $slug_id, $payload );
@@ -1896,6 +1921,17 @@ class AS_Content_Stream {
 			}
 		}
 
+		return $this->find_destination_post_by_slug( $job, $payload );
+	}
+
+	/**
+	 * Find a destination post by source slug.
+	 *
+	 * @param object              $job Processing job.
+	 * @param array<string,mixed> $payload Queue payload.
+	 * @return int
+	 */
+	private function find_destination_post_by_slug( $job, $payload ) {
 		$slug = isset( $payload['original_post_name'] ) && '' !== $payload['original_post_name'] ? $payload['original_post_name'] : ( isset( $payload['post_name'] ) ? $payload['post_name'] : '' );
 		$slug = sanitize_title( $slug );
 
@@ -2941,14 +2977,20 @@ class AS_Content_Stream {
 		if ( $lookup_id ) {
 			return $wpdb->get_results(
 				$wpdb->prepare(
-					'SELECT * FROM ' . self::links_table_name() . ' WHERE source_post_id = %d OR target_post_id = %d ORDER BY updated_at DESC',
+					'SELECT * FROM ' . self::links_table_name() . ' WHERE status = %s AND (source_post_id = %d OR target_post_id = %d) ORDER BY updated_at DESC',
+					'active',
 					$lookup_id,
 					$lookup_id
 				)
 			);
 		}
 
-		return $wpdb->get_results( 'SELECT * FROM ' . self::links_table_name() . ' ORDER BY updated_at DESC' );
+		return $wpdb->get_results(
+			$wpdb->prepare(
+				'SELECT * FROM ' . self::links_table_name() . ' WHERE status = %s ORDER BY updated_at DESC',
+				'active'
+			)
+		);
 	}
 
 	/**
@@ -3320,8 +3362,95 @@ class AS_Content_Stream {
 				AND (
 					newer.updated_at > older.updated_at
 					OR (newer.updated_at = older.updated_at AND newer.id > older.id)
-				)"
+			)"
 		);
+	}
+
+	/**
+	 * Reconcile active Streaming Map rows against currently active WPML sites.
+	 *
+	 * @param array<int,array<string,mixed>> $sites Inspected destination sites.
+	 * @return void
+	 */
+	private function reconcile_streaming_map_for_sites( $sites ) {
+		if ( ! is_multisite() || ! is_main_site() ) {
+			return;
+		}
+
+		global $wpdb;
+		self::create_links_table();
+
+		$inactive_ids = array();
+		foreach ( $sites as $site ) {
+			if ( empty( $site['blog_id'] ) || ! empty( $site['wpml_active'] ) ) {
+				continue;
+			}
+
+			$inactive_ids[] = (int) $site['blog_id'];
+		}
+
+		if ( empty( $inactive_ids ) ) {
+			return;
+		}
+
+		$placeholders = implode( ',', array_fill( 0, count( $inactive_ids ), '%d' ) );
+		$query_args = array_merge( array( current_time( 'mysql', true ), 'inactive_wpml', 'active' ), $inactive_ids );
+		$wpdb->query(
+			$wpdb->prepare(
+				'UPDATE ' . self::links_table_name() . " SET updated_at = %s, status = %s WHERE status = %s AND target_blog_id IN ({$placeholders})",
+				$query_args
+			)
+		);
+	}
+
+	/**
+	 * Refresh Discovery once when active WPML destination targets change.
+	 *
+	 * @param array<int,array<string,mixed>> $sites Inspected destination sites.
+	 * @return void
+	 */
+	private function refresh_discovery_queue_after_target_change( $sites ) {
+		if ( ! is_multisite() || ! is_main_site() ) {
+			return;
+		}
+
+		$signature = $this->target_signature_for_sites( $sites );
+		$previous = (string) get_site_option( self::OPTION_TARGET_SIGNATURE, '' );
+
+		if ( '' === $previous ) {
+			update_site_option( self::OPTION_TARGET_SIGNATURE, $signature );
+			return;
+		}
+
+		if ( $previous === $signature ) {
+			return;
+		}
+
+		update_site_option( self::OPTION_TARGET_SIGNATURE, $signature );
+		$this->refresh_discovery_queue();
+	}
+
+	/**
+	 * Build a stable signature for active WPML destination targets.
+	 *
+	 * @param array<int,array<string,mixed>> $sites Inspected destination sites.
+	 * @return string
+	 */
+	private function target_signature_for_sites( $sites ) {
+		$parts = array();
+		foreach ( $sites as $site ) {
+			if ( empty( $site['blog_id'] ) || empty( $site['wpml_active'] ) || empty( $site['languages'] ) || ! is_array( $site['languages'] ) ) {
+				continue;
+			}
+
+			$languages = array_values( array_unique( array_filter( array_map( 'sanitize_key', $site['languages'] ) ) ) );
+			sort( $languages );
+			$parts[] = (int) $site['blog_id'] . ':' . implode( ',', $languages );
+		}
+
+		sort( $parts );
+
+		return md5( implode( '|', $parts ) );
 	}
 
 	/**
@@ -4064,6 +4193,9 @@ class AS_Content_Stream {
 			$results[] = $this->inspect_site( (int) $site->blog_id );
 		}
 
+		$this->reconcile_streaming_map_for_sites( $results );
+		$this->refresh_discovery_queue_after_target_change( $results );
+
 		return $results;
 	}
 
@@ -4493,14 +4625,27 @@ class AS_Content_Stream {
 	 * Get processing queue rows.
 	 *
 	 * @param bool $terminal Whether to get terminal log rows.
+	 * @param int  $lookup_id Optional post ID lookup for logs.
 	 * @return array<int,object>
 	 */
-	private function get_processing_queue_items( $terminal ) {
+	private function get_processing_queue_items( $terminal, $lookup_id = 0 ) {
 		global $wpdb;
 
 		self::create_processing_queue_table();
 
 		$status_sql = $terminal ? "status = 'complete'" : "status <> 'complete'";
+		if ( $terminal && $lookup_id ) {
+			self::create_links_table();
+
+			return $wpdb->get_results(
+				$wpdb->prepare(
+					'SELECT p.* FROM ' . self::processing_queue_table_name() . ' p LEFT JOIN ' . self::links_table_name() . ' l ON l.id = p.link_id WHERE p.status = %s AND (p.source_post_id = %d OR l.target_post_id = %d) ORDER BY p.id DESC LIMIT 100',
+					'complete',
+					$lookup_id,
+					$lookup_id
+				)
+			);
+		}
 
 		return $wpdb->get_results( 'SELECT * FROM ' . self::processing_queue_table_name() . ' WHERE ' . $status_sql . ' ORDER BY id DESC LIMIT 100' );
 	}
@@ -4694,7 +4839,12 @@ class AS_Content_Stream {
 
 		self::create_links_table();
 
-		return (int) $wpdb->get_var( 'SELECT COUNT(*) FROM ' . self::links_table_name() );
+		return (int) $wpdb->get_var(
+			$wpdb->prepare(
+				'SELECT COUNT(*) FROM ' . self::links_table_name() . ' WHERE status = %s',
+				'active'
+			)
+		);
 	}
 
 	/**
