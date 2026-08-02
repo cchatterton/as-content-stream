@@ -2,6 +2,13 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.71 - 2026-08-02
+
+- Aligns Sites & WPML health snapshots with Streaming Map logic by starting from active map rows for published source content.
+- Adds Expected, Mapped Missing, and Diff columns to Sites & WPML.
+- Uses Mapped Missing for active map rows whose destination post is missing, trashed, wrong type, or not in the streaming language.
+- Aligns the per-site Clean action with the same active map scope used by site health.
+
 ## 0.1.70 - 2026-08-02
 
 - Adds cached destination-site health counts for mapped published, mapped draft, and not-mapped target-language posts.

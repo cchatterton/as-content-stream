@@ -545,8 +545,11 @@ class AS_Content_Stream {
 					<th><?php esc_html_e( 'Site', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'WPML', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Languages', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Expected', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Mapped Published', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Mapped Draft', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Mapped Missing', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Diff', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Not Mapped', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Status', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Control', 'as-content-stream' ); ?></th>
@@ -554,13 +557,16 @@ class AS_Content_Stream {
 			</thead>
 			<tbody>
 				<?php if ( empty( $sites ) ) : ?>
-					<tr><td colspan="9"><?php esc_html_e( 'No sites found.', 'as-content-stream' ); ?></td></tr>
+					<tr><td colspan="12"><?php esc_html_e( 'No sites found.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
 				<?php foreach ( $sites as $site ) : ?>
 					<?php
 					$health = isset( $site_health[ (int) $site['blog_id'] ] ) ? $site_health[ (int) $site['blog_id'] ] : array();
+					$expected = isset( $health['expected'] ) ? (int) $health['expected'] : null;
 					$mapped_published = isset( $health['mapped_published'] ) ? (int) $health['mapped_published'] : null;
 					$mapped_draft = isset( $health['mapped_draft'] ) ? (int) $health['mapped_draft'] : null;
+					$mapped_missing = isset( $health['mapped_missing'] ) ? (int) $health['mapped_missing'] : null;
+					$diff = isset( $health['diff'] ) ? (int) $health['diff'] : null;
 					$not_mapped = isset( $health['not_mapped'] ) ? (int) $health['not_mapped'] : null;
 					$health_status = isset( $health['status'] ) ? sanitize_key( $health['status'] ) : 'not_scanned';
 					$can_clean = ! empty( $site['wpml_active'] ) && in_array( $target_language, (array) $site['languages'], true );
@@ -577,8 +583,11 @@ class AS_Content_Stream {
 							</span>
 						</td>
 						<td><?php echo esc_html( $this->format_list( $site['languages'] ) ); ?></td>
+						<td><?php echo esc_html( null === $expected ? '-' : $expected ); ?></td>
 						<td><?php echo esc_html( null === $mapped_published ? '-' : $mapped_published ); ?></td>
 						<td><?php echo esc_html( null === $mapped_draft ? '-' : $mapped_draft ); ?></td>
+						<td><?php echo esc_html( null === $mapped_missing ? '-' : $mapped_missing ); ?></td>
+						<td><?php echo esc_html( null === $diff ? '-' : $diff ); ?></td>
 						<td><?php echo esc_html( null === $not_mapped ? '-' : $not_mapped ); ?></td>
 						<td><?php echo esc_html( $this->format_site_health_status( $health_status ) ); ?></td>
 						<td>
@@ -2447,21 +2456,32 @@ class AS_Content_Stream {
 			return true;
 		}
 
+		$language = $this->get_post_language_current_site( $post_id, $post_type );
+
+		return '' === (string) $language || sanitize_key( $language ) === $target_language;
+	}
+
+	/**
+	 * Get the current site's WPML language for a post, if available.
+	 *
+	 * @param int    $post_id Post ID.
+	 * @param string $post_type Post type.
+	 * @return string
+	 */
+	private function get_post_language_current_site( $post_id, $post_type ) {
 		global $wpdb;
 		$table_name = $wpdb->prefix . 'icl_translations';
 		if ( ! $this->table_exists( $table_name ) ) {
-			return true;
+			return '';
 		}
 
-		$language = $wpdb->get_var(
+		return (string) $wpdb->get_var(
 			$wpdb->prepare(
 				"SELECT language_code FROM {$table_name} WHERE element_id = %d AND element_type = %s LIMIT 1",
 				$post_id,
 				'post_' . sanitize_key( $post_type )
 			)
 		);
-
-		return '' === (string) $language || sanitize_key( $language ) === $target_language;
 	}
 
 	/**
@@ -2521,32 +2541,49 @@ class AS_Content_Stream {
 	}
 
 	/**
-	 * Get active mapped target post IDs for a destination site/language.
+	 * Get active Streaming Map rows for one destination site using published source scope.
 	 *
 	 * @param int    $blog_id Destination blog ID.
 	 * @param string $target_language Target language.
-	 * @return array<int,bool>
+	 * @return array<int,array<string,mixed>>
 	 */
-	private function get_active_mapped_target_post_ids( $blog_id, $target_language ) {
+	private function get_active_mapped_target_rows( $blog_id, $target_language ) {
 		global $wpdb;
 
 		self::create_links_table();
 
-		$ids = $wpdb->get_col(
-			$wpdb->prepare(
-				'SELECT target_post_id FROM ' . self::links_table_name() . ' WHERE target_blog_id = %d AND target_language = %s AND status = %s',
-				(int) $blog_id,
-				sanitize_key( $target_language ),
-				'active'
-			)
-		);
-
-		$mapped = array();
-		foreach ( (array) $ids as $id ) {
-			$mapped[ (int) $id ] = true;
+		$post_types = $this->get_discoverable_source_post_types();
+		if ( empty( $post_types ) || '' === $target_language ) {
+			return array();
 		}
 
-		return $mapped;
+		$links_table = self::links_table_name();
+		$posts_table = $wpdb->get_blog_prefix( get_main_site_id() ) . 'posts';
+		$post_type_placeholders = implode( ',', array_fill( 0, count( $post_types ), '%s' ) );
+		$args = array_merge(
+			array( 'publish' ),
+			$post_types,
+			array( 'active', get_main_site_id(), (int) $blog_id, sanitize_key( $target_language ) )
+		);
+
+		return array_values(
+			(array) $wpdb->get_results(
+				$wpdb->prepare(
+					"SELECT l.target_post_id, l.source_post_type
+					FROM {$links_table} l
+					INNER JOIN {$posts_table} p
+						ON p.ID = l.source_post_id
+						AND p.post_status = %s
+						AND p.post_type IN ({$post_type_placeholders})
+					WHERE l.status = %s
+						AND l.source_blog_id = %d
+						AND l.target_blog_id = %d
+						AND l.target_language = %s",
+					$args
+				),
+				ARRAY_A
+			)
+		);
 	}
 
 	/**
@@ -2561,6 +2598,8 @@ class AS_Content_Stream {
 				return __( 'Healthy', 'as-content-stream' );
 			case 'needs_clean':
 				return __( 'Needs clean', 'as-content-stream' );
+			case 'needs_repair':
+				return __( 'Needs repair', 'as-content-stream' );
 			case 'inactive':
 				return __( 'Inactive', 'as-content-stream' );
 			default:
@@ -3975,7 +4014,12 @@ class AS_Content_Stream {
 		}
 
 		$rows = $this->get_target_language_post_rows( $blog_id, $target_language );
-		$mapped_ids = $this->get_active_mapped_target_post_ids( $blog_id, $target_language );
+		$mapped_ids = array();
+		foreach ( $this->get_active_mapped_target_rows( $blog_id, $target_language ) as $mapped_row ) {
+			if ( ! empty( $mapped_row['target_post_id'] ) ) {
+				$mapped_ids[ (int) $mapped_row['target_post_id'] ] = true;
+			}
+		}
 
 		$restore = get_current_blog_id() !== $blog_id;
 		if ( $restore ) {
@@ -5254,8 +5298,11 @@ class AS_Content_Stream {
 		$base = array(
 			'blog_id'           => $blog_id,
 			'target_language'   => sanitize_key( $target_language ),
+			'expected'          => 0,
 			'mapped_published'  => 0,
 			'mapped_draft'      => 0,
+			'mapped_missing'    => 0,
+			'diff'              => 0,
 			'not_mapped'        => 0,
 			'status'            => 'inactive',
 			'scanned_at'        => current_time( 'mysql', true ),
@@ -5265,23 +5312,60 @@ class AS_Content_Stream {
 			return $base;
 		}
 
-		$rows = $this->get_target_language_post_rows( $blog_id, $target_language );
-		$mapped_ids = $this->get_active_mapped_target_post_ids( $blog_id, $target_language );
-		foreach ( $rows as $row ) {
-			$post_id = (int) $row['ID'];
-			$is_mapped = isset( $mapped_ids[ $post_id ] );
-			$status = sanitize_key( $row['post_status'] );
+		$base['expected'] = $this->get_published_source_content_count();
+		$mapped_rows = $this->get_active_mapped_target_rows( $blog_id, $target_language );
+		$seen_mapped_ids = array();
+		$restore = get_current_blog_id() !== $blog_id;
+		if ( $restore ) {
+			switch_to_blog( $blog_id );
+		}
 
-			if ( ! $is_mapped ) {
-				$base['not_mapped']++;
-			} elseif ( 'publish' === $status ) {
+		foreach ( $mapped_rows as $mapped_row ) {
+			$target_post_id = isset( $mapped_row['target_post_id'] ) ? (int) $mapped_row['target_post_id'] : 0;
+			$source_post_type = isset( $mapped_row['source_post_type'] ) ? sanitize_key( $mapped_row['source_post_type'] ) : '';
+			if ( $target_post_id ) {
+				$seen_mapped_ids[ $target_post_id ] = true;
+			}
+
+			$post = $target_post_id ? get_post( $target_post_id ) : null;
+			$language = $post instanceof WP_Post ? $this->get_post_language_current_site( $target_post_id, $post->post_type ) : '';
+			if (
+				! $post instanceof WP_Post
+				|| 'trash' === sanitize_key( $post->post_status )
+				|| sanitize_key( $post->post_type ) !== $source_post_type
+				|| sanitize_key( $language ) !== sanitize_key( $target_language )
+			) {
+				$base['mapped_missing']++;
+				continue;
+			}
+
+			if ( 'publish' === sanitize_key( $post->post_status ) ) {
 				$base['mapped_published']++;
 			} else {
 				$base['mapped_draft']++;
 			}
 		}
 
-		$base['status'] = ( 0 === (int) $base['mapped_published'] && 0 === (int) $base['not_mapped'] ) ? 'healthy' : 'needs_clean';
+		if ( $restore ) {
+			restore_current_blog();
+		}
+
+		$rows = $this->get_target_language_post_rows( $blog_id, $target_language );
+		foreach ( $rows as $row ) {
+			$post_id = (int) $row['ID'];
+			if ( ! isset( $seen_mapped_ids[ $post_id ] ) ) {
+				$base['not_mapped']++;
+			}
+		}
+
+		$base['diff'] = (int) $base['expected'] - ( (int) $base['mapped_published'] + (int) $base['mapped_draft'] + (int) $base['mapped_missing'] );
+		if ( 0 !== (int) $base['diff'] || 0 !== (int) $base['mapped_missing'] ) {
+			$base['status'] = 'needs_repair';
+		} elseif ( 0 !== (int) $base['mapped_published'] || 0 !== (int) $base['not_mapped'] ) {
+			$base['status'] = 'needs_clean';
+		} else {
+			$base['status'] = 'healthy';
+		}
 
 		return $base;
 	}
