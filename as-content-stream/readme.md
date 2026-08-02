@@ -1,7 +1,7 @@
 # Content Stream
 
 Author: AlphaSys
-Version: 0.1.67
+Version: 0.1.68
 Status: POC
 
 ## Purpose
@@ -20,6 +20,7 @@ Content Stream is a network-enabled WordPress plugin scaffold for multisite cont
 - Provides a manual Re-run Discovery button to clear and rebuild Discovery queue rows.
 - Runs Discovery only on plugin activation or a manual Re-run Discovery click.
 - Shows all-tab queue summary counts in Network Status.
+- Shows a Streaming Map reconciliation difference in Network Status.
 - Shows live queue status and blocked/failed processing pressure in Heartbeat.
 - Refreshes Settings dashboard metrics every second with AJAX.
 - Refreshes open source and processing queue tables every second while you watch them.

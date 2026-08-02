@@ -541,6 +541,12 @@ class AS_Content_Stream {
 				return $site['wpml_active'];
 			}
 		);
+		$map_difference = $this->calculate_streaming_map_difference(
+			$published_content_count,
+			count( $wpml_sites ),
+			$streamed_count,
+			isset( $queue_action_counts['discover'] ) ? (int) $queue_action_counts['discover'] : 0
+		);
 		$this->ensure_stream_author_for_sites( $wpml_sites );
 		?>
 		<div class="as-content-grid as-content-settings-grid">
@@ -583,6 +589,7 @@ class AS_Content_Stream {
 						<tr><th scope="row"><?php esc_html_e( 'Delete Queue', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_delete"><?php echo esc_html( isset( $queue_action_counts['delete'] ) ? $queue_action_counts['delete'] : 0 ); ?></td></tr>
 						<tr><th scope="row"><?php esc_html_e( 'Processing Queue', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_processing"><?php echo esc_html( $processing_open_count ); ?></td></tr>
 						<tr><th scope="row"><?php esc_html_e( 'Streaming Map', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_streamed"><?php echo esc_html( $streamed_count ); ?></td></tr>
+						<tr><th scope="row"><?php esc_html_e( 'Difference', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_difference"><?php echo esc_html( $map_difference ); ?></td></tr>
 						<tr><th scope="row"><?php esc_html_e( 'Log', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_log"><?php echo esc_html( $log_count ); ?></td></tr>
 					</tbody>
 				</table>
@@ -726,6 +733,7 @@ class AS_Content_Stream {
 							setText('status_delete', status.status_delete);
 							setText('status_processing', status.status_processing);
 							setText('status_streamed', status.status_streamed);
+							setText('status_difference', status.status_difference);
 							setText('status_published_content', status.status_published_content);
 							setText('status_log', status.status_log);
 							setText('status_sites', status.status_sites);
@@ -5538,6 +5546,22 @@ class AS_Content_Stream {
 	}
 
 	/**
+	 * Calculate the visible Streaming Map reconciliation difference.
+	 *
+	 * @param int $published_count Published source content count.
+	 * @param int $active_wpml_sites Active WPML destination site count.
+	 * @param int $streamed_count Active Streaming Map row count.
+	 * @param int $discovery_count Source items waiting for Discovery.
+	 * @return int
+	 */
+	private function calculate_streaming_map_difference( $published_count, $active_wpml_sites, $streamed_count, $discovery_count ) {
+		$expected_rows = (int) $published_count * (int) $active_wpml_sites;
+		$accounted_rows = (int) $streamed_count + ( (int) $discovery_count * (int) $active_wpml_sites );
+
+		return $expected_rows - $accounted_rows;
+	}
+
+	/**
 	 * Get heartbeat status.
 	 *
 	 * @return array<string,mixed>
@@ -5570,6 +5594,10 @@ class AS_Content_Stream {
 			$target_language_labels[ $language ] = sprintf( '%s (%d)', $language, $count );
 		}
 		$current_source_id = isset( $telemetry['current_source_id'] ) ? (int) $telemetry['current_source_id'] : 0;
+		$published_content_count = $this->get_published_source_content_count();
+		$streamed_count = $this->get_streamed_content_count();
+		$discovery_count = isset( $queue_action_counts['discover'] ) ? (int) $queue_action_counts['discover'] : 0;
+		$wpml_site_count = count( $wpml_sites );
 
 		return array(
 			'enabled'                => $enabled,
@@ -5589,16 +5617,17 @@ class AS_Content_Stream {
 			'last_message'           => isset( $telemetry['last_message'] ) ? (string) $telemetry['last_message'] : __( 'No processing runs yet.', 'as-content-stream' ),
 			'queue_counts'           => $queue_pulse['queue_counts'],
 			'processing_counts'      => $queue_pulse['processing_counts'],
-			'status_discovery'       => isset( $queue_action_counts['discover'] ) ? (int) $queue_action_counts['discover'] : 0,
+			'status_discovery'       => $discovery_count,
 			'status_create'          => isset( $queue_action_counts['create'] ) ? (int) $queue_action_counts['create'] : 0,
 			'status_update'          => isset( $queue_action_counts['update'] ) ? (int) $queue_action_counts['update'] : 0,
 			'status_delete'          => isset( $queue_action_counts['delete'] ) ? (int) $queue_action_counts['delete'] : 0,
 			'status_processing'      => $this->get_processing_queue_open_count(),
-			'status_streamed'        => $this->get_streamed_content_count(),
-			'status_published_content' => $this->get_published_source_content_count(),
+			'status_streamed'        => $streamed_count,
+			'status_difference'      => $this->calculate_streaming_map_difference( $published_content_count, $wpml_site_count, $streamed_count, $discovery_count ),
+			'status_published_content' => $published_content_count,
 			'status_log'             => $this->get_processing_log_count(),
 			'status_sites'           => count( $sites ),
-			'status_wpml_sites'      => count( $wpml_sites ),
+			'status_wpml_sites'      => $wpml_site_count,
 			'target_language'        => $target_language,
 			'target_language_labels' => $target_language_labels,
 		);

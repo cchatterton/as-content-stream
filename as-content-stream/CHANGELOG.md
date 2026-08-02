@@ -2,6 +2,11 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.68 - 2026-08-02
+
+- Adds a Network Status Difference row for Streaming Map reconciliation.
+- Calculates Difference as published content times active WPML sites minus Streaming Map plus Discovery coverage.
+
 ## 0.1.67 - 2026-08-02
 
 - Makes Processing Queue a live AJAX view so jobs appear, update, and leave while the tab is open.
