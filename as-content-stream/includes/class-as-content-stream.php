@@ -1218,7 +1218,7 @@ class AS_Content_Stream {
 			$this->process_tick( true, 1 );
 		}
 
-		wp_safe_redirect( $this->admin_url( array( 'tab' => 'processing_queue', 'updated' => 1 ) ) );
+		wp_safe_redirect( $this->admin_url( array( 'tab' => 'processing_queue' ) ) );
 		exit;
 	}
 
@@ -3110,7 +3110,7 @@ class AS_Content_Stream {
 			}
 		}
 
-		wp_safe_redirect( $this->admin_url( array( 'tab' => 'processing_queue', 'updated' => 1 ) ) );
+		wp_safe_redirect( $this->admin_url( array( 'tab' => 'processing_queue' ) ) );
 		exit;
 	}
 
@@ -3229,7 +3229,7 @@ class AS_Content_Stream {
 			}
 		}
 
-		wp_safe_redirect( $this->admin_url( array( 'tab' => 'processing_queue', 'updated' => 1 ) ) );
+		wp_safe_redirect( $this->admin_url( array( 'tab' => 'processing_queue' ) ) );
 		exit;
 	}
 
@@ -3300,7 +3300,7 @@ class AS_Content_Stream {
 			}
 		}
 
-		wp_safe_redirect( $this->admin_url( array( 'tab' => 'links', 'updated' => 1 ) ) );
+		wp_safe_redirect( $this->admin_url( array( 'tab' => 'links' ) ) );
 		exit;
 	}
 

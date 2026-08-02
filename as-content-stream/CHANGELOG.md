@@ -2,6 +2,11 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.50 - 2026-08-02
+
+- Removed success notices from manual Run actions so they quietly reload the target tab.
+- Kept explicit notices for settings saves, queue clears, Discovery rebuilds, and log clears.
+
 ## 0.1.49 - 2026-08-02
 
 - Changed the Heartbeat processing gauge to show Queued / Blocked / Failed counts.
