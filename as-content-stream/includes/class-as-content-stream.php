@@ -524,6 +524,7 @@ class AS_Content_Stream {
 		$processing_open_count = $this->get_processing_queue_open_count();
 		$queue_action_counts = $this->get_queue_action_counts();
 		$streamed_count = $this->get_streamed_content_count();
+		$published_content_count = $this->get_published_source_content_count();
 		$log_count = $this->get_processing_log_count();
 		$language_counts = $this->get_language_counts( $sites );
 		$target_language = $this->get_effective_target_language( $language_counts );
@@ -569,6 +570,7 @@ class AS_Content_Stream {
 				<h2><?php esc_html_e( 'Network Status', 'as-content-stream' ); ?></h2>
 				<table class="as-content-metric-table">
 					<tbody>
+						<tr><th scope="row"><?php esc_html_e( 'Published Content', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_published_content"><?php echo esc_html( $published_content_count ); ?></td></tr>
 						<tr><th scope="row"><?php esc_html_e( 'Sites', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_sites"><?php echo esc_html( count( $sites ) ); ?></td></tr>
 						<tr><th scope="row"><?php esc_html_e( 'WPML active sites', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_wpml_sites"><?php echo esc_html( count( $wpml_sites ) ); ?></td></tr>
 						<tr><th scope="row"><?php esc_html_e( 'Discovery Queue', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_discovery"><?php echo esc_html( isset( $queue_action_counts['discover'] ) ? $queue_action_counts['discover'] : 0 ); ?></td></tr>
@@ -708,6 +710,7 @@ class AS_Content_Stream {
 							setText('status_delete', status.status_delete);
 							setText('status_processing', status.status_processing);
 							setText('status_streamed', status.status_streamed);
+							setText('status_published_content', status.status_published_content);
 							setText('status_log', status.status_log);
 							setText('status_sites', status.status_sites);
 							setText('status_wpml_sites', status.status_wpml_sites);
@@ -4508,6 +4511,30 @@ class AS_Content_Stream {
 	}
 
 	/**
+	 * Count published streamable posts from the core site.
+	 *
+	 * @return int
+	 */
+	private function get_published_source_content_count() {
+		global $wpdb;
+
+		$post_types = $this->get_discoverable_source_post_types();
+		if ( empty( $post_types ) ) {
+			return 0;
+		}
+
+		$table = $wpdb->get_blog_prefix( get_main_site_id() ) . 'posts';
+		$placeholders = implode( ',', array_fill( 0, count( $post_types ), '%s' ) );
+
+		return (int) $wpdb->get_var(
+			$wpdb->prepare(
+				"SELECT COUNT(*) FROM {$table} WHERE post_status = %s AND post_type IN ({$placeholders})",
+				array_merge( array( 'publish' ), $post_types )
+			)
+		);
+	}
+
+	/**
 	 * Get public source post types currently registered on the core site.
 	 *
 	 * @return string[]
@@ -4957,6 +4984,7 @@ class AS_Content_Stream {
 			'status_delete'          => isset( $queue_action_counts['delete'] ) ? (int) $queue_action_counts['delete'] : 0,
 			'status_processing'      => $this->get_processing_queue_open_count(),
 			'status_streamed'        => $this->get_streamed_content_count(),
+			'status_published_content' => $this->get_published_source_content_count(),
 			'status_log'             => $this->get_processing_log_count(),
 			'status_sites'           => count( $sites ),
 			'status_wpml_sites'      => count( $wpml_sites ),

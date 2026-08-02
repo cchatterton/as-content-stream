@@ -2,6 +2,10 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.61 - 2026-08-02
+
+- Adds a Published Content count as the first item in the Network Status tile.
+
 ## 0.1.60 - 2026-08-02
 
 - Changes the Heartbeat next-check bar to a pure CSS animation based on the saved heartbeat interval.
