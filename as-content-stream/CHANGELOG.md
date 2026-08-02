@@ -2,6 +2,13 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.73 - 2026-08-02
+
+- Adds a CPT Settings tab for per-post-type stream status policy.
+- Defaults stream status to Draft for all post types except impact, which defaults to Publish.
+- Enforces CPT stream status during create, update, discovery mapping, and site Clean actions.
+- Adds Wrong Status to Sites & WPML health snapshots.
+
 ## 0.1.72 - 2026-08-02
 
 - Keeps Run Discovery on the Settings tab after the discovery rebuild completes.

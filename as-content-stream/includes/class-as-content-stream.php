@@ -20,6 +20,7 @@ class AS_Content_Stream {
 	const OPTION_TELEMETRY       = 'as_content_stream_telemetry';
 	const OPTION_TARGET_SIGNATURE = 'as_content_stream_target_signature';
 	const OPTION_SITE_HEALTH     = 'as_content_stream_site_health';
+	const OPTION_POST_TYPE_STATUS = 'as_content_stream_post_type_status';
 	const NONCE_SETTINGS         = 'as_content_stream_settings';
 	const NONCE_QUEUE            = 'as_content_stream_queue';
 	const NONCE_LOG              = 'as_content_stream_log';
@@ -114,6 +115,7 @@ class AS_Content_Stream {
 	private function __construct() {
 		add_action( 'admin_menu', array( $this, 'register_core_site_menu' ) );
 		add_action( 'admin_post_as_content_stream_save_settings', array( $this, 'save_settings' ) );
+		add_action( 'admin_post_as_content_stream_save_post_type_settings', array( $this, 'save_post_type_settings' ) );
 		add_action( 'admin_post_as_content_stream_clear_queue', array( $this, 'clear_queue' ) );
 		add_action( 'admin_post_as_content_stream_run_queue_item', array( $this, 'run_queue_item' ) );
 		add_action( 'admin_post_as_content_stream_delete_queue_item', array( $this, 'delete_queue_item' ) );
@@ -364,6 +366,7 @@ class AS_Content_Stream {
 		$tabs       = array(
 			'settings'     => __( 'Settings', 'as-content-stream' ),
 			'sites'        => __( 'Sites & WPML', 'as-content-stream' ),
+			'post_types'   => __( 'CPT Settings', 'as-content-stream' ),
 		);
 		if ( $has_discovery ) {
 			$tabs['discovery_queue'] = __( 'Discovery Queue', 'as-content-stream' );
@@ -412,6 +415,9 @@ class AS_Content_Stream {
 					break;
 				case 'sites':
 					$this->render_sites_tab();
+					break;
+				case 'post_types':
+					$this->render_post_types_tab();
 					break;
 				case 'discovery_queue':
 					$this->render_discovery_tab();
@@ -550,6 +556,7 @@ class AS_Content_Stream {
 					<th><?php esc_html_e( 'Mapped Draft', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Mapped Missing', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Diff', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Wrong Status', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Not Mapped', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Status', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Control', 'as-content-stream' ); ?></th>
@@ -557,7 +564,7 @@ class AS_Content_Stream {
 			</thead>
 			<tbody>
 				<?php if ( empty( $sites ) ) : ?>
-					<tr><td colspan="12"><?php esc_html_e( 'No sites found.', 'as-content-stream' ); ?></td></tr>
+					<tr><td colspan="13"><?php esc_html_e( 'No sites found.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
 				<?php foreach ( $sites as $site ) : ?>
 					<?php
@@ -567,6 +574,7 @@ class AS_Content_Stream {
 					$mapped_draft = isset( $health['mapped_draft'] ) ? (int) $health['mapped_draft'] : null;
 					$mapped_missing = isset( $health['mapped_missing'] ) ? (int) $health['mapped_missing'] : null;
 					$diff = isset( $health['diff'] ) ? (int) $health['diff'] : null;
+					$wrong_status = isset( $health['wrong_status'] ) ? (int) $health['wrong_status'] : null;
 					$not_mapped = isset( $health['not_mapped'] ) ? (int) $health['not_mapped'] : null;
 					$health_status = isset( $health['status'] ) ? sanitize_key( $health['status'] ) : 'not_scanned';
 					$can_clean = ! empty( $site['wpml_active'] ) && in_array( $target_language, (array) $site['languages'], true );
@@ -588,6 +596,7 @@ class AS_Content_Stream {
 						<td><?php echo esc_html( null === $mapped_draft ? '-' : $mapped_draft ); ?></td>
 						<td><?php echo esc_html( null === $mapped_missing ? '-' : $mapped_missing ); ?></td>
 						<td><?php echo esc_html( null === $diff ? '-' : $diff ); ?></td>
+						<td><?php echo esc_html( null === $wrong_status ? '-' : $wrong_status ); ?></td>
 						<td><?php echo esc_html( null === $not_mapped ? '-' : $not_mapped ); ?></td>
 						<td><?php echo esc_html( $this->format_site_health_status( $health_status ) ); ?></td>
 						<td>
@@ -601,6 +610,51 @@ class AS_Content_Stream {
 				<?php endforeach; ?>
 			</tbody>
 		</table>
+		<?php
+	}
+
+	/**
+	 * Render post type status settings.
+	 *
+	 * @return void
+	 */
+	private function render_post_types_tab() {
+		$post_types = $this->get_discoverable_source_post_types();
+		$settings = $this->get_post_type_status_settings();
+		?>
+		<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_save_post_type_settings' ) ); ?>">
+			<?php wp_nonce_field( self::NONCE_SETTINGS ); ?>
+			<table class="widefat striped as-content-queue">
+				<thead>
+					<tr>
+						<th><?php esc_html_e( 'Post Type', 'as-content-stream' ); ?></th>
+						<th><?php esc_html_e( 'Label', 'as-content-stream' ); ?></th>
+						<th><?php esc_html_e( 'Stream As', 'as-content-stream' ); ?></th>
+					</tr>
+				</thead>
+				<tbody>
+					<?php if ( empty( $post_types ) ) : ?>
+						<tr><td colspan="3"><?php esc_html_e( 'No streamable post types found.', 'as-content-stream' ); ?></td></tr>
+					<?php endif; ?>
+					<?php foreach ( $post_types as $post_type ) : ?>
+						<?php $status = isset( $settings[ $post_type ] ) ? sanitize_key( $settings[ $post_type ] ) : $this->get_default_post_type_stream_status( $post_type ); ?>
+						<tr>
+							<td><code><?php echo esc_html( $post_type ); ?></code></td>
+							<td><?php echo esc_html( $this->get_post_type_label( $post_type ) ); ?></td>
+							<td>
+								<select name="post_type_status[<?php echo esc_attr( $post_type ); ?>]">
+									<option value="draft" <?php selected( $status, 'draft' ); ?>><?php esc_html_e( 'Draft', 'as-content-stream' ); ?></option>
+									<option value="publish" <?php selected( $status, 'publish' ); ?>><?php esc_html_e( 'Publish', 'as-content-stream' ); ?></option>
+								</select>
+							</td>
+						</tr>
+					<?php endforeach; ?>
+				</tbody>
+			</table>
+			<p class="submit">
+				<?php submit_button( __( 'Save CPT Settings', 'as-content-stream' ), 'primary', 'submit', false ); ?>
+			</p>
+		</form>
 		<?php
 	}
 
@@ -1457,6 +1511,31 @@ class AS_Content_Stream {
 	}
 
 	/**
+	 * Save post type stream status settings.
+	 *
+	 * @return void
+	 */
+	public function save_post_type_settings() {
+		if ( ! is_multisite() || ! is_main_site() || ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You do not have permission to update Content Stream.', 'as-content-stream' ) );
+		}
+
+		check_admin_referer( self::NONCE_SETTINGS );
+
+		$posted = isset( $_POST['post_type_status'] ) && is_array( $_POST['post_type_status'] ) ? wp_unslash( $_POST['post_type_status'] ) : array();
+		$settings = array();
+		foreach ( $this->get_discoverable_source_post_types() as $post_type ) {
+			$status = isset( $posted[ $post_type ] ) ? sanitize_key( $posted[ $post_type ] ) : $this->get_default_post_type_stream_status( $post_type );
+			$settings[ $post_type ] = in_array( $status, array( 'draft', 'publish' ), true ) ? $status : $this->get_default_post_type_stream_status( $post_type );
+		}
+
+		update_site_option( self::OPTION_POST_TYPE_STATUS, $settings );
+
+		wp_safe_redirect( $this->admin_url( array( 'tab' => 'post_types', 'updated' => 1 ) ) );
+		exit;
+	}
+
+	/**
 	 * AJAX heartbeat status.
 	 *
 	 * @return void
@@ -1991,7 +2070,7 @@ class AS_Content_Stream {
 			if ( $restore ) {
 				restore_current_blog();
 			}
-			return $this->processing_result( 'complete', sprintf( __( 'Existing destination mapped from Streaming Map memory and forced to draft. #%d', 'as-content-stream' ), (int) $mapped_id ) );
+			return $this->processing_result( 'complete', sprintf( __( 'Existing destination mapped from Streaming Map memory and status policy applied. #%d', 'as-content-stream' ), (int) $mapped_id ) );
 		}
 
 		$legacy_id = $this->find_legacy_destination_post_id( $job, $payload );
@@ -2012,7 +2091,7 @@ class AS_Content_Stream {
 				if ( $restore ) {
 					restore_current_blog();
 				}
-				return $this->processing_result( 'complete', sprintf( __( 'Existing destination mapped from legacy metadata and forced to draft. #%d', 'as-content-stream' ), (int) $legacy_id ) );
+				return $this->processing_result( 'complete', sprintf( __( 'Existing destination mapped from legacy metadata and status policy applied. #%d', 'as-content-stream' ), (int) $legacy_id ) );
 			}
 		}
 
@@ -2027,7 +2106,7 @@ class AS_Content_Stream {
 				if ( $restore ) {
 					restore_current_blog();
 				}
-				return $this->processing_result( 'complete', sprintf( __( 'Existing destination mapped from slug and forced to draft. #%d', 'as-content-stream' ), (int) $slug_id ) );
+				return $this->processing_result( 'complete', sprintf( __( 'Existing destination mapped from slug and status policy applied. #%d', 'as-content-stream' ), (int) $slug_id ) );
 			}
 		}
 
@@ -2164,7 +2243,7 @@ class AS_Content_Stream {
 			if ( $restore ) {
 				restore_current_blog();
 			}
-			return $this->processing_result( 'complete', sprintf( __( 'Destination already exists; mapped existing destination and forced to draft. #%d', 'as-content-stream' ), (int) $existing_id ) );
+			return $this->processing_result( 'complete', sprintf( __( 'Destination already exists; mapped existing destination and status policy applied. #%d', 'as-content-stream' ), (int) $existing_id ) );
 		}
 
 		$result_id = $this->copy_source_post_sql_to_destination( $job, (int) $author_id, (int) $existing_id );
@@ -2634,7 +2713,7 @@ class AS_Content_Stream {
 
 		unset( $source_row['ID'] );
 		$source_row['post_author'] = $author_id;
-		$source_row['post_status'] = 'draft';
+		$source_row['post_status'] = $this->get_post_type_stream_status( sanitize_key( $job->post_type ) );
 		$source_row['guid'] = '';
 		$source_row['post_parent'] = 0;
 
@@ -2658,13 +2737,13 @@ class AS_Content_Stream {
 	}
 
 	/**
-	 * Force an existing destination post to draft without using post update hooks.
+	 * Force an existing destination post to the configured stream status without using post update hooks.
 	 *
 	 * @param int $blog_id Destination blog ID.
 	 * @param int $post_id Destination post ID.
 	 * @return bool
 	 */
-	private function force_destination_post_draft( $blog_id, $post_id ) {
+	private function force_destination_post_status( $blog_id, $post_id, $post_type ) {
 		global $wpdb;
 
 		$restore = get_current_blog_id() !== $blog_id;
@@ -2675,7 +2754,7 @@ class AS_Content_Stream {
 		$table = $wpdb->get_blog_prefix( $blog_id ) . 'posts';
 		$updated = $wpdb->update(
 			$table,
-			array( 'post_status' => 'draft' ),
+			array( 'post_status' => $this->get_post_type_stream_status( $post_type ) ),
 			array( 'ID' => $post_id ),
 			array( '%s' ),
 			array( '%d' )
@@ -3371,7 +3450,7 @@ class AS_Content_Stream {
 			$link = $this->get_link_for_concrete_map( (int) $job->source_blog_id, (int) $job->source_post_id, sanitize_key( $job->post_type ), (int) $job->target_blog_id, sanitize_key( $job->target_language ) );
 		}
 		if ( 'attachment' !== sanitize_key( $job->post_type ) ) {
-			$this->force_destination_post_draft( (int) $job->target_blog_id, $destination_post_id );
+			$this->force_destination_post_status( (int) $job->target_blog_id, $destination_post_id, sanitize_key( $job->post_type ) );
 		}
 		$data = array(
 			'updated_at'              => current_time( 'mysql', true ),
@@ -4029,11 +4108,12 @@ class AS_Content_Stream {
 		foreach ( $rows as $row ) {
 			$post_id = (int) $row['ID'];
 			if ( isset( $mapped_ids[ $post_id ] ) ) {
-				if ( 'draft' !== sanitize_key( $row['post_status'] ) ) {
+				$stream_status = $this->get_post_type_stream_status( sanitize_key( $row['post_type'] ) );
+				if ( $stream_status !== sanitize_key( $row['post_status'] ) ) {
 					wp_update_post(
 						array(
 							'ID'          => $post_id,
-							'post_status' => 'draft',
+							'post_status' => $stream_status,
 						)
 					);
 				}
@@ -4831,6 +4911,69 @@ class AS_Content_Stream {
 	}
 
 	/**
+	 * Get post type stream status settings.
+	 *
+	 * @return array<string,string>
+	 */
+	private function get_post_type_status_settings() {
+		$saved = get_site_option( self::OPTION_POST_TYPE_STATUS, array() );
+		$saved = is_array( $saved ) ? $saved : array();
+		$settings = array();
+
+		foreach ( $this->get_discoverable_source_post_types() as $post_type ) {
+			$status = isset( $saved[ $post_type ] ) ? sanitize_key( $saved[ $post_type ] ) : $this->get_default_post_type_stream_status( $post_type );
+			$settings[ $post_type ] = in_array( $status, array( 'draft', 'publish' ), true ) ? $status : $this->get_default_post_type_stream_status( $post_type );
+		}
+
+		return $settings;
+	}
+
+	/**
+	 * Get a post type's default stream status.
+	 *
+	 * @param string $post_type Post type.
+	 * @return string
+	 */
+	private function get_default_post_type_stream_status( $post_type ) {
+		return 'impact' === sanitize_key( $post_type ) ? 'publish' : 'draft';
+	}
+
+	/**
+	 * Get the enforced destination status for a post type.
+	 *
+	 * @param string $post_type Post type.
+	 * @return string
+	 */
+	private function get_post_type_stream_status( $post_type ) {
+		$post_type = sanitize_key( $post_type );
+		$settings = $this->get_post_type_status_settings();
+
+		return isset( $settings[ $post_type ] ) ? $settings[ $post_type ] : $this->get_default_post_type_stream_status( $post_type );
+	}
+
+	/**
+	 * Get a readable post type label.
+	 *
+	 * @param string $post_type Post type.
+	 * @return string
+	 */
+	private function get_post_type_label( $post_type ) {
+		$restore = get_current_blog_id() !== get_main_site_id();
+		if ( $restore ) {
+			switch_to_blog( get_main_site_id() );
+		}
+
+		$object = get_post_type_object( sanitize_key( $post_type ) );
+		$label = $object && ! empty( $object->labels->singular_name ) ? $object->labels->singular_name : $post_type;
+
+		if ( $restore ) {
+			restore_current_blog();
+		}
+
+		return (string) $label;
+	}
+
+	/**
 	 * Get an existing source UUID from links, or create one for a new relationship batch.
 	 *
 	 * @param int $source_blog_id Source blog ID.
@@ -5303,6 +5446,7 @@ class AS_Content_Stream {
 			'mapped_draft'      => 0,
 			'mapped_missing'    => 0,
 			'diff'              => 0,
+			'wrong_status'      => 0,
 			'not_mapped'        => 0,
 			'status'            => 'inactive',
 			'scanned_at'        => current_time( 'mysql', true ),
@@ -5344,6 +5488,10 @@ class AS_Content_Stream {
 			} else {
 				$base['mapped_draft']++;
 			}
+
+			if ( sanitize_key( $post->post_status ) !== $this->get_post_type_stream_status( $source_post_type ) ) {
+				$base['wrong_status']++;
+			}
 		}
 
 		if ( $restore ) {
@@ -5361,7 +5509,7 @@ class AS_Content_Stream {
 		$base['diff'] = (int) $base['expected'] - ( (int) $base['mapped_published'] + (int) $base['mapped_draft'] + (int) $base['mapped_missing'] );
 		if ( 0 !== (int) $base['diff'] || 0 !== (int) $base['mapped_missing'] ) {
 			$base['status'] = 'needs_repair';
-		} elseif ( 0 !== (int) $base['mapped_published'] || 0 !== (int) $base['not_mapped'] ) {
+		} elseif ( 0 !== (int) $base['wrong_status'] || 0 !== (int) $base['not_mapped'] ) {
 			$base['status'] = 'needs_clean';
 		} else {
 			$base['status'] = 'healthy';

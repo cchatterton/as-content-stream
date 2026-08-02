@@ -1,7 +1,7 @@
 # Content Stream
 
 Author: AlphaSys
-Version: 0.1.72
+Version: 0.1.73
 Status: POC
 
 ## Purpose
@@ -13,6 +13,7 @@ Content Stream is a network-enabled WordPress plugin scaffold for multisite cont
 - Discovers sites where WPML is active.
 - Lists each site's own WPML language codes.
 - Shows cached destination health counts for expected, mapped published, mapped draft, mapped missing, diff, and not-mapped target-language content.
+- Adds CPT Settings for per-post-type stream status, defaulting to Draft except `impact`, which defaults to Publish.
 - Records create, update, and delete content actions in a visible global queue.
 - Captures individual and bulk edits/trash actions on the core source site.
 - Splits queue visibility into Create Queue, Update Queue, and Delete Queue tabs.
@@ -38,10 +39,10 @@ Content Stream is a network-enabled WordPress plugin scaffold for multisite cont
 - Queue-style tables expose Job IDs and use Post Title as the source edit link.
 - Discovery uses legacy WFC Push Post metadata first, then slug/language matching, then blocks behind a normal create job when destination content is missing.
 - Discovery only creates child processing jobs for destination sites missing from the Streaming Map.
-- Adds per-site Clean controls that force mapped destination content to draft and move not-mapped target-language content to Trash.
+- Adds per-site Clean controls that force mapped destination content to the configured CPT stream status and move not-mapped target-language content to Trash.
 - Links source and destination sites from the Processing Queue and Log tabs.
 - Creates/updates/trashes destination posts from processing jobs with stream identifiers and the integration author.
-- Forces destination posts to draft during creates, updates, and existing destination mapping.
+- Enforces configured CPT stream status during creates, updates, and existing destination mapping.
 - Keeps failed processing jobs out of Log and available for retry in Processing Queue.
 - Copies source post content and postmeta to destination posts with SQL.
 - Adds manual Run and Delete controls to every item in the Processing Queue.
@@ -77,8 +78,8 @@ as-content-stream/
 - Deleted, archived, and spammed multisite sites are excluded from discovery and queue targets.
 - WPML active status reflects live plugin activation for that site, not historical WPML settings.
 - GitHub releases must include `as-content-stream.zip` as a release asset.
-- Processing jobs copy source post content and postmeta with SQL; destination posts are forced to draft.
-- Streamed creates and updates always force destination posts to draft.
+- Processing jobs copy source post content and postmeta with SQL; destination post status follows CPT Settings.
+- Streamed creates and updates enforce the configured CPT stream status.
 - Source/destination relationships are stored in `wp_as_content_stream_links`, not postmeta.
 - Processing Queue exposes job IDs, blocked-by IDs, post type, and manual Run controls for dependency handling.
 - Revision, autosave, media attachment, and WordPress structural post types are excluded from the queues.
