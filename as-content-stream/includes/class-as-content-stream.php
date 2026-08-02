@@ -19,6 +19,7 @@ class AS_Content_Stream {
 	const OPTION_HEARTBEAT_SECONDS = 'as_content_stream_heartbeat_seconds';
 	const OPTION_TELEMETRY       = 'as_content_stream_telemetry';
 	const OPTION_TARGET_SIGNATURE = 'as_content_stream_target_signature';
+	const OPTION_SITE_HEALTH     = 'as_content_stream_site_health';
 	const NONCE_SETTINGS         = 'as_content_stream_settings';
 	const NONCE_QUEUE            = 'as_content_stream_queue';
 	const NONCE_LOG              = 'as_content_stream_log';
@@ -117,6 +118,7 @@ class AS_Content_Stream {
 		add_action( 'admin_post_as_content_stream_run_queue_item', array( $this, 'run_queue_item' ) );
 		add_action( 'admin_post_as_content_stream_delete_queue_item', array( $this, 'delete_queue_item' ) );
 		add_action( 'admin_post_as_content_stream_rerun_discovery', array( $this, 'rerun_discovery' ) );
+		add_action( 'admin_post_as_content_stream_clean_site', array( $this, 'clean_site' ) );
 		add_action( 'admin_post_as_content_stream_clear_log', array( $this, 'clear_log' ) );
 		add_action( 'admin_post_as_content_stream_run_processing_job', array( $this, 'run_processing_job' ) );
 		add_action( 'admin_post_as_content_stream_delete_processing_job', array( $this, 'delete_processing_job' ) );
@@ -397,6 +399,9 @@ class AS_Content_Stream {
 			if ( isset( $_GET['discovery_refreshed'] ) ) {
 				echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Discovery queue rebuilt.', 'as-content-stream' ) . '</p></div>';
 			}
+			if ( isset( $_GET['site_cleaned'] ) ) {
+				echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Destination site cleaned.', 'as-content-stream' ) . '</p></div>';
+			}
 			if ( isset( $_GET['log_cleared'] ) ) {
 				echo '<div class="notice notice-success is-dismissible"><p>' . esc_html__( 'Processing log cleared.', 'as-content-stream' ) . '</p></div>';
 			}
@@ -431,7 +436,52 @@ class AS_Content_Stream {
 					break;
 			}
 			?>
+			<?php $this->render_action_overlay(); ?>
 		</div>
+		<?php
+	}
+
+	/**
+	 * Render the blocking action overlay for expensive admin actions.
+	 *
+	 * @return void
+	 */
+	private function render_action_overlay() {
+		?>
+		<div class="as-content-action-overlay" hidden>
+			<div class="as-content-action-overlay-panel">
+				<strong data-as-overlay-message><?php esc_html_e( 'Working...', 'as-content-stream' ); ?></strong>
+				<div class="as-content-lazy-loader" aria-hidden="true"><span></span><span></span><span></span></div>
+			</div>
+		</div>
+		<script>
+			(function () {
+				var overlay = document.querySelector('.as-content-action-overlay');
+				if (!overlay) {
+					return;
+				}
+				var label = overlay.querySelector('[data-as-overlay-message]');
+				Array.prototype.forEach.call(document.querySelectorAll('.as-content-overlay-form'), function (form) {
+					form.addEventListener('submit', function (event) {
+						if (form.dataset.asSubmitting === '1') {
+							return;
+						}
+						event.preventDefault();
+						if (label) {
+							label.textContent = form.getAttribute('data-as-overlay-message') || 'Working...';
+						}
+						overlay.hidden = false;
+						Array.prototype.forEach.call(form.querySelectorAll('button, input[type="submit"]'), function (button) {
+							button.disabled = true;
+						});
+						window.requestAnimationFrame(function () {
+							form.dataset.asSubmitting = '1';
+							window.HTMLFormElement.prototype.submit.call(form);
+						});
+					});
+				});
+			}());
+		</script>
 		<?php
 	}
 
@@ -484,6 +534,9 @@ class AS_Content_Stream {
 	 */
 	private function render_sites_tab() {
 		$sites = $this->discover_sites();
+		$site_health = $this->get_site_health_snapshots();
+		$language_counts = $this->get_language_counts( $sites );
+		$target_language = $this->get_effective_target_language( $language_counts );
 		?>
 		<table class="widefat striped as-content-sites">
 			<thead>
@@ -492,13 +545,26 @@ class AS_Content_Stream {
 					<th><?php esc_html_e( 'Site', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'WPML', 'as-content-stream' ); ?></th>
 					<th><?php esc_html_e( 'Languages', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Mapped Published', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Mapped Draft', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Not Mapped', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Status', 'as-content-stream' ); ?></th>
+					<th><?php esc_html_e( 'Control', 'as-content-stream' ); ?></th>
 				</tr>
 			</thead>
 			<tbody>
 				<?php if ( empty( $sites ) ) : ?>
-					<tr><td colspan="4"><?php esc_html_e( 'No sites found.', 'as-content-stream' ); ?></td></tr>
+					<tr><td colspan="9"><?php esc_html_e( 'No sites found.', 'as-content-stream' ); ?></td></tr>
 				<?php endif; ?>
 				<?php foreach ( $sites as $site ) : ?>
+					<?php
+					$health = isset( $site_health[ (int) $site['blog_id'] ] ) ? $site_health[ (int) $site['blog_id'] ] : array();
+					$mapped_published = isset( $health['mapped_published'] ) ? (int) $health['mapped_published'] : null;
+					$mapped_draft = isset( $health['mapped_draft'] ) ? (int) $health['mapped_draft'] : null;
+					$not_mapped = isset( $health['not_mapped'] ) ? (int) $health['not_mapped'] : null;
+					$health_status = isset( $health['status'] ) ? sanitize_key( $health['status'] ) : 'not_scanned';
+					$can_clean = ! empty( $site['wpml_active'] ) && in_array( $target_language, (array) $site['languages'], true );
+					?>
 					<tr>
 						<td><?php echo esc_html( (int) $site['blog_id'] ); ?></td>
 						<td>
@@ -511,6 +577,17 @@ class AS_Content_Stream {
 							</span>
 						</td>
 						<td><?php echo esc_html( $this->format_list( $site['languages'] ) ); ?></td>
+						<td><?php echo esc_html( null === $mapped_published ? '-' : $mapped_published ); ?></td>
+						<td><?php echo esc_html( null === $mapped_draft ? '-' : $mapped_draft ); ?></td>
+						<td><?php echo esc_html( null === $not_mapped ? '-' : $not_mapped ); ?></td>
+						<td><?php echo esc_html( $this->format_site_health_status( $health_status ) ); ?></td>
+						<td>
+							<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_clean_site' ) ); ?>" class="as-content-row-action as-content-overlay-form" data-as-overlay-message="<?php esc_attr_e( 'Cleaning...', 'as-content-stream' ); ?>">
+								<?php wp_nonce_field( self::NONCE_QUEUE ); ?>
+								<input type="hidden" name="blog_id" value="<?php echo esc_attr( (int) $site['blog_id'] ); ?>">
+								<?php submit_button( __( 'Clean', 'as-content-stream' ), 'secondary small', 'submit', false, $can_clean ? array() : array( 'disabled' => 'disabled' ) ); ?>
+							</form>
+						</td>
 					</tr>
 				<?php endforeach; ?>
 			</tbody>
@@ -593,7 +670,7 @@ class AS_Content_Stream {
 						<tr><th scope="row"><?php esc_html_e( 'Log', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_log"><?php echo esc_html( $log_count ); ?></td></tr>
 					</tbody>
 				</table>
-				<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_rerun_discovery' ) ); ?>">
+				<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_rerun_discovery' ) ); ?>" class="as-content-overlay-form" data-as-overlay-message="<?php esc_attr_e( 'Discovering...', 'as-content-stream' ); ?>">
 					<?php wp_nonce_field( self::NONCE_QUEUE ); ?>
 					<?php submit_button( __( 'Run Discovery', 'as-content-stream' ), 'secondary', 'submit', false ); ?>
 				</form>
@@ -2388,6 +2465,110 @@ class AS_Content_Stream {
 	}
 
 	/**
+	 * Get streamable target-language posts from a destination site.
+	 *
+	 * @param int    $blog_id Destination blog ID.
+	 * @param string $target_language Target language.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function get_target_language_post_rows( $blog_id, $target_language ) {
+		global $wpdb;
+
+		$post_types = $this->get_discoverable_source_post_types();
+		if ( empty( $post_types ) || '' === $target_language ) {
+			return array();
+		}
+
+		$restore = is_multisite() && get_current_blog_id() !== (int) $blog_id;
+		if ( $restore ) {
+			switch_to_blog( (int) $blog_id );
+		}
+
+		$translations_table = $wpdb->prefix . 'icl_translations';
+		if ( ! $this->table_exists( $translations_table ) ) {
+			if ( $restore ) {
+				restore_current_blog();
+			}
+			return array();
+		}
+
+		$post_type_placeholders = implode( ',', array_fill( 0, count( $post_types ), '%s' ) );
+		$status_placeholders = implode( ',', array_fill( 0, 3, '%s' ) );
+		$args = array_merge(
+			$post_types,
+			array( sanitize_key( $target_language ), 'trash', 'inherit', 'auto-draft' )
+		);
+		$rows = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT p.ID, p.post_status, p.post_type
+				FROM {$wpdb->posts} p
+				INNER JOIN {$translations_table} t
+					ON t.element_id = p.ID
+					AND t.element_type = CONCAT('post_', p.post_type)
+				WHERE p.post_type IN ({$post_type_placeholders})
+					AND t.language_code = %s
+					AND p.post_status NOT IN ({$status_placeholders})",
+				$args
+			),
+			ARRAY_A
+		);
+
+		if ( $restore ) {
+			restore_current_blog();
+		}
+
+		return array_values( (array) $rows );
+	}
+
+	/**
+	 * Get active mapped target post IDs for a destination site/language.
+	 *
+	 * @param int    $blog_id Destination blog ID.
+	 * @param string $target_language Target language.
+	 * @return array<int,bool>
+	 */
+	private function get_active_mapped_target_post_ids( $blog_id, $target_language ) {
+		global $wpdb;
+
+		self::create_links_table();
+
+		$ids = $wpdb->get_col(
+			$wpdb->prepare(
+				'SELECT target_post_id FROM ' . self::links_table_name() . ' WHERE target_blog_id = %d AND target_language = %s AND status = %s',
+				(int) $blog_id,
+				sanitize_key( $target_language ),
+				'active'
+			)
+		);
+
+		$mapped = array();
+		foreach ( (array) $ids as $id ) {
+			$mapped[ (int) $id ] = true;
+		}
+
+		return $mapped;
+	}
+
+	/**
+	 * Format cached site health status.
+	 *
+	 * @param string $status Health status key.
+	 * @return string
+	 */
+	private function format_site_health_status( $status ) {
+		switch ( sanitize_key( $status ) ) {
+			case 'healthy':
+				return __( 'Healthy', 'as-content-stream' );
+			case 'needs_clean':
+				return __( 'Needs clean', 'as-content-stream' );
+			case 'inactive':
+				return __( 'Inactive', 'as-content-stream' );
+			default:
+				return __( 'Not scanned', 'as-content-stream' );
+		}
+	}
+
+	/**
 	 * Copy the source post row to the destination with SQL.
 	 *
 	 * @param object $job Processing job.
@@ -3760,6 +3941,75 @@ class AS_Content_Stream {
 	}
 
 	/**
+	 * Clean one destination site for the current streaming language.
+	 *
+	 * @return void
+	 */
+	public function clean_site() {
+		if ( ! is_multisite() || ! is_main_site() || ! current_user_can( 'manage_options' ) ) {
+			wp_die( esc_html__( 'You do not have permission to clean Content Stream destination sites.', 'as-content-stream' ) );
+		}
+
+		check_admin_referer( self::NONCE_QUEUE );
+
+		$blog_id = isset( $_POST['blog_id'] ) ? absint( wp_unslash( $_POST['blog_id'] ) ) : 0;
+		if ( ! $blog_id || $blog_id === (int) get_main_site_id() ) {
+			wp_safe_redirect( $this->admin_url( array( 'tab' => 'sites' ) ) );
+			exit;
+		}
+
+		$sites = $this->get_destination_sites_for_scan();
+		$site = null;
+		foreach ( $sites as $candidate ) {
+			if ( (int) $candidate['blog_id'] === $blog_id ) {
+				$site = $candidate;
+				break;
+			}
+		}
+
+		$language_counts = $this->get_language_counts( $sites );
+		$target_language = $this->get_effective_target_language( $language_counts );
+		if ( ! $site || empty( $site['wpml_active'] ) || '' === $target_language || ! in_array( $target_language, (array) $site['languages'], true ) ) {
+			wp_safe_redirect( $this->admin_url( array( 'tab' => 'sites' ) ) );
+			exit;
+		}
+
+		$rows = $this->get_target_language_post_rows( $blog_id, $target_language );
+		$mapped_ids = $this->get_active_mapped_target_post_ids( $blog_id, $target_language );
+
+		$restore = get_current_blog_id() !== $blog_id;
+		if ( $restore ) {
+			switch_to_blog( $blog_id );
+		}
+
+		foreach ( $rows as $row ) {
+			$post_id = (int) $row['ID'];
+			if ( isset( $mapped_ids[ $post_id ] ) ) {
+				if ( 'draft' !== sanitize_key( $row['post_status'] ) ) {
+					wp_update_post(
+						array(
+							'ID'          => $post_id,
+							'post_status' => 'draft',
+						)
+					);
+				}
+				continue;
+			}
+
+			wp_trash_post( $post_id );
+		}
+
+		if ( $restore ) {
+			restore_current_blog();
+		}
+
+		$this->refresh_site_health_snapshot( $blog_id );
+
+		wp_safe_redirect( $this->admin_url( array( 'tab' => 'sites', 'site_cleaned' => 1 ) ) );
+		exit;
+	}
+
+	/**
 	 * Re-queue legacy skipped processing rows so they can be resolved under current rules.
 	 *
 	 * @return void
@@ -4887,6 +5137,153 @@ class AS_Content_Stream {
 				)
 			);
 		}
+
+		$this->refresh_site_health_snapshots();
+	}
+
+	/**
+	 * Get destination sites without triggering Discovery side effects.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function get_destination_sites_for_scan() {
+		if ( ! is_multisite() ) {
+			return array();
+		}
+
+		$sites = get_sites(
+			array(
+				'number'   => 0,
+				'deleted'  => 0,
+				'archived' => 0,
+				'spam'     => 0,
+			)
+		);
+		$results = array();
+
+		foreach ( $sites as $site ) {
+			if ( (int) $site->blog_id === (int) get_main_site_id() ) {
+				continue;
+			}
+
+			$results[] = $this->inspect_site( (int) $site->blog_id );
+		}
+
+		return $results;
+	}
+
+	/**
+	 * Get cached destination site health snapshots.
+	 *
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function get_site_health_snapshots() {
+		$snapshots = get_site_option( self::OPTION_SITE_HEALTH, array() );
+		$snapshots = is_array( $snapshots ) ? $snapshots : array();
+		$normalized = array();
+
+		foreach ( $snapshots as $blog_id => $snapshot ) {
+			if ( is_array( $snapshot ) ) {
+				$normalized[ (int) $blog_id ] = $snapshot;
+			}
+		}
+
+		return $normalized;
+	}
+
+	/**
+	 * Save one destination site health snapshot.
+	 *
+	 * @param int                 $blog_id Blog ID.
+	 * @param array<string,mixed> $snapshot Snapshot data.
+	 * @return void
+	 */
+	private function save_site_health_snapshot( $blog_id, $snapshot ) {
+		$snapshots = $this->get_site_health_snapshots();
+		$snapshots[ (int) $blog_id ] = $snapshot;
+		update_site_option( self::OPTION_SITE_HEALTH, $snapshots );
+	}
+
+	/**
+	 * Refresh all destination site health snapshots.
+	 *
+	 * @return void
+	 */
+	private function refresh_site_health_snapshots() {
+		$sites = $this->get_destination_sites_for_scan();
+		$language_counts = $this->get_language_counts( $sites );
+		$target_language = $this->get_effective_target_language( $language_counts );
+		$snapshots = array();
+
+		foreach ( $sites as $site ) {
+			$snapshots[ (int) $site['blog_id'] ] = $this->build_site_health_snapshot( $site, $target_language );
+		}
+
+		update_site_option( self::OPTION_SITE_HEALTH, $snapshots );
+	}
+
+	/**
+	 * Refresh one destination site health snapshot.
+	 *
+	 * @param int $blog_id Blog ID.
+	 * @return void
+	 */
+	private function refresh_site_health_snapshot( $blog_id ) {
+		$sites = $this->get_destination_sites_for_scan();
+		$language_counts = $this->get_language_counts( $sites );
+		$target_language = $this->get_effective_target_language( $language_counts );
+
+		foreach ( $sites as $site ) {
+			if ( (int) $site['blog_id'] === (int) $blog_id ) {
+				$this->save_site_health_snapshot( $blog_id, $this->build_site_health_snapshot( $site, $target_language ) );
+				return;
+			}
+		}
+	}
+
+	/**
+	 * Build one destination site health snapshot.
+	 *
+	 * @param array<string,mixed> $site Destination site.
+	 * @param string              $target_language Target language.
+	 * @return array<string,mixed>
+	 */
+	private function build_site_health_snapshot( $site, $target_language ) {
+		$blog_id = isset( $site['blog_id'] ) ? (int) $site['blog_id'] : 0;
+		$languages = isset( $site['languages'] ) && is_array( $site['languages'] ) ? $site['languages'] : array();
+		$base = array(
+			'blog_id'           => $blog_id,
+			'target_language'   => sanitize_key( $target_language ),
+			'mapped_published'  => 0,
+			'mapped_draft'      => 0,
+			'not_mapped'        => 0,
+			'status'            => 'inactive',
+			'scanned_at'        => current_time( 'mysql', true ),
+		);
+
+		if ( empty( $site['wpml_active'] ) || '' === $target_language || ! in_array( $target_language, $languages, true ) ) {
+			return $base;
+		}
+
+		$rows = $this->get_target_language_post_rows( $blog_id, $target_language );
+		$mapped_ids = $this->get_active_mapped_target_post_ids( $blog_id, $target_language );
+		foreach ( $rows as $row ) {
+			$post_id = (int) $row['ID'];
+			$is_mapped = isset( $mapped_ids[ $post_id ] );
+			$status = sanitize_key( $row['post_status'] );
+
+			if ( ! $is_mapped ) {
+				$base['not_mapped']++;
+			} elseif ( 'publish' === $status ) {
+				$base['mapped_published']++;
+			} else {
+				$base['mapped_draft']++;
+			}
+		}
+
+		$base['status'] = ( 0 === (int) $base['mapped_published'] && 0 === (int) $base['not_mapped'] ) ? 'healthy' : 'needs_clean';
+
+		return $base;
 	}
 
 	/**

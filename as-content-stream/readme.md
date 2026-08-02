@@ -1,7 +1,7 @@
 # Content Stream
 
 Author: AlphaSys
-Version: 0.1.69
+Version: 0.1.70
 Status: POC
 
 ## Purpose
@@ -12,13 +12,15 @@ Content Stream is a network-enabled WordPress plugin scaffold for multisite cont
 
 - Discovers sites where WPML is active.
 - Lists each site's own WPML language codes.
+- Shows cached destination health counts for mapped published, mapped draft, and not-mapped target-language content.
 - Records create, update, and delete content actions in a visible global queue.
 - Captures individual and bulk edits/trash actions on the core source site.
 - Splits queue visibility into Create Queue, Update Queue, and Delete Queue tabs.
 - Shows a temporary Discovery Queue tab when published source content is not fully mapped.
 - Limits Discovery to public post types currently registered on the core site.
 - Provides a manual Run Discovery button to clear and rebuild Discovery queue rows.
-- Runs Discovery only on plugin activation or a manual Re-run Discovery click.
+- Shows a blocking overlay while Discovery or site cleanup runs.
+- Runs Discovery only on plugin activation or a manual Run Discovery click.
 - Shows all-tab queue summary counts in Network Status.
 - Shows a Streaming Map reconciliation difference in Network Status.
 - Shows live queue status and blocked/failed processing pressure in Heartbeat.
@@ -36,6 +38,7 @@ Content Stream is a network-enabled WordPress plugin scaffold for multisite cont
 - Queue-style tables expose Job IDs and use Post Title as the source edit link.
 - Discovery uses legacy WFC Push Post metadata first, then slug/language matching, then blocks behind a normal create job when destination content is missing.
 - Discovery only creates child processing jobs for destination sites missing from the Streaming Map.
+- Adds per-site Clean controls that force mapped destination content to draft and move not-mapped target-language content to Trash.
 - Links source and destination sites from the Processing Queue and Log tabs.
 - Creates/updates/trashes destination posts from processing jobs with stream identifiers and the integration author.
 - Forces destination posts to draft during creates, updates, and existing destination mapping.

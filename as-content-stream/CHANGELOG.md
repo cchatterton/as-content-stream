@@ -2,6 +2,13 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.70 - 2026-08-02
+
+- Adds cached destination-site health counts for mapped published, mapped draft, and not-mapped target-language posts.
+- Refreshes destination health snapshots during Discovery and refreshes only the cleaned site after Clean.
+- Adds per-site Clean controls that draft mapped destination posts and move not-mapped target-language posts to Trash.
+- Adds a blocking animated overlay for Run Discovery and Clean actions.
+
 ## 0.1.69 - 2026-08-02
 
 - Skips already mapped destination sites when a Discovery parent job is exploded into processing jobs.

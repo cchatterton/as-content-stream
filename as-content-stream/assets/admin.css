@@ -349,6 +349,40 @@
 	animation-delay: 240ms;
 }
 
+.as-content-action-overlay {
+	align-items: center;
+	background: rgba(240, 240, 241, .72);
+	bottom: 0;
+	display: flex;
+	justify-content: center;
+	left: 0;
+	position: fixed;
+	right: 0;
+	top: 32px;
+	z-index: 100000;
+}
+
+.as-content-action-overlay[hidden] {
+	display: none;
+}
+
+.as-content-action-overlay-panel {
+	align-items: center;
+	background: #fff;
+	border: 1px solid #c3c4c7;
+	box-shadow: 0 8px 24px rgba(0, 0, 0, .12);
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	min-width: 220px;
+	padding: 22px 28px 18px;
+}
+
+.as-content-action-overlay-panel strong {
+	color: #1d2327;
+	font-size: 15px;
+}
+
 @keyframes as-content-lazy-dot {
 	0%,
 	80%,
