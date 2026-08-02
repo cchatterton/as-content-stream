@@ -1,7 +1,7 @@
 # Content Stream
 
 Author: AlphaSys
-Version: 0.1.50
+Version: 0.1.51
 Status: POC
 
 ## Purpose
@@ -34,6 +34,7 @@ Content Stream is a network-enabled WordPress plugin scaffold for multisite cont
 - Discovery uses legacy WFC Push Post metadata first, then slug/language matching, then blocks behind a normal create job when destination content is missing.
 - Links source and destination sites from the Processing Queue and Log tabs.
 - Creates/updates/trashes destination posts from processing jobs with stream identifiers and the integration author.
+- Forces destination posts to draft during creates, updates, and existing destination mapping.
 - Keeps failed processing jobs out of Log and available for retry in Processing Queue.
 - Copies source post content and postmeta to destination posts with SQL.
 - Adds manual Run and Delete controls to every item in the Processing Queue.

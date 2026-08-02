@@ -2,6 +2,13 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.51 - 2026-08-02
+
+- Forces existing destination posts to draft when Discovery maps by legacy metadata or slug.
+- Forces existing destination posts to draft when create processing finds and maps an existing destination.
+- Forces non-media Streaming Map writes to draft the destination post so Discovery and manual map paths share the rule.
+- Keeps SQL create/update streaming behavior forcing destination posts to draft.
+
 ## 0.1.50 - 2026-08-02
 
 - Removed success notices from manual Run actions so they quietly reload the target tab.

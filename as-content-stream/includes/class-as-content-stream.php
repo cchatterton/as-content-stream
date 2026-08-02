@@ -1538,7 +1538,7 @@ class AS_Content_Stream {
 				if ( $restore ) {
 					restore_current_blog();
 				}
-				return $this->processing_result( 'complete', sprintf( __( 'Existing destination mapped from legacy metadata. #%d', 'as-content-stream' ), (int) $legacy_id ) );
+				return $this->processing_result( 'complete', sprintf( __( 'Existing destination mapped from legacy metadata and forced to draft. #%d', 'as-content-stream' ), (int) $legacy_id ) );
 			}
 		}
 
@@ -1553,7 +1553,7 @@ class AS_Content_Stream {
 				if ( $restore ) {
 					restore_current_blog();
 				}
-				return $this->processing_result( 'complete', sprintf( __( 'Existing destination mapped from slug. #%d', 'as-content-stream' ), (int) $slug_id ) );
+				return $this->processing_result( 'complete', sprintf( __( 'Existing destination mapped from slug and forced to draft. #%d', 'as-content-stream' ), (int) $slug_id ) );
 			}
 		}
 
@@ -1690,7 +1690,7 @@ class AS_Content_Stream {
 			if ( $restore ) {
 				restore_current_blog();
 			}
-			return $this->processing_result( 'complete', sprintf( __( 'Destination already exists; mapped existing destination. #%d', 'as-content-stream' ), (int) $existing_id ) );
+			return $this->processing_result( 'complete', sprintf( __( 'Destination already exists; mapped existing destination and forced to draft. #%d', 'as-content-stream' ), (int) $existing_id ) );
 		}
 
 		$result_id = $this->copy_source_post_sql_to_destination( $job, (int) $author_id, (int) $existing_id );
@@ -2034,6 +2034,39 @@ class AS_Content_Stream {
 		clean_post_cache( $insert_id );
 
 		return $insert_id;
+	}
+
+	/**
+	 * Force an existing destination post to draft without using post update hooks.
+	 *
+	 * @param int $blog_id Destination blog ID.
+	 * @param int $post_id Destination post ID.
+	 * @return bool
+	 */
+	private function force_destination_post_draft( $blog_id, $post_id ) {
+		global $wpdb;
+
+		$restore = get_current_blog_id() !== $blog_id;
+		if ( $restore ) {
+			switch_to_blog( $blog_id );
+		}
+
+		$table = $wpdb->get_blog_prefix( $blog_id ) . 'posts';
+		$updated = $wpdb->update(
+			$table,
+			array( 'post_status' => 'draft' ),
+			array( 'ID' => $post_id ),
+			array( '%s' ),
+			array( '%d' )
+		);
+
+		clean_post_cache( $post_id );
+
+		if ( $restore ) {
+			restore_current_blog();
+		}
+
+		return false !== $updated;
 	}
 
 	/**
@@ -2745,6 +2778,9 @@ class AS_Content_Stream {
 		$source_slug = isset( $payload['original_post_name'] ) && '' !== $payload['original_post_name'] ? sanitize_title( $payload['original_post_name'] ) : sanitize_title( isset( $payload['post_name'] ) ? $payload['post_name'] : '' );
 		$target_slug = $this->get_post_slug_from_site( (int) $job->target_blog_id, $destination_post_id );
 		$link = $this->get_link_for_source_target( $source_uuid, (int) $job->target_blog_id, sanitize_key( $job->target_language ) );
+		if ( 'attachment' !== sanitize_key( $job->post_type ) ) {
+			$this->force_destination_post_draft( (int) $job->target_blog_id, $destination_post_id );
+		}
 		$data = array(
 			'updated_at'              => current_time( 'mysql', true ),
 			'last_streamed_at'        => current_time( 'mysql', true ),
