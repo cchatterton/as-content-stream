@@ -235,6 +235,25 @@
 	background: #008a20;
 }
 
+.as-content-progress-timer span {
+	animation: as-content-heartbeat-fill var(--as-content-heartbeat-duration, 60s) linear infinite;
+	width: 0;
+}
+
+.as-content-progress-timer.is-paused span {
+	animation: none;
+	width: 0;
+}
+
+@keyframes as-content-heartbeat-fill {
+	0% {
+		width: 0;
+	}
+	100% {
+		width: 100%;
+	}
+}
+
 .as-content-progress-danger span {
 	background: #b32d2e;
 }

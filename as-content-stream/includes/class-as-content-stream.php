@@ -592,8 +592,8 @@ class AS_Content_Stream {
 						<div class="as-content-gauge-meta">
 							<span><?php esc_html_e( 'Next check', 'as-content-stream' ); ?></span>
 						</div>
-						<div class="as-content-progress as-content-progress-success" aria-hidden="true">
-							<span data-as-heartbeat-bar="next" style="width: <?php echo esc_attr( $heartbeat['next_check_percent'] ); ?>%;"></span>
+						<div class="as-content-progress as-content-progress-success as-content-progress-timer <?php echo $processing_enabled ? '' : 'is-paused'; ?>" aria-hidden="true">
+							<span style="--as-content-heartbeat-duration: <?php echo esc_attr( self::get_heartbeat_seconds() ); ?>s;"></span>
 						</div>
 					</div>
 					<div class="as-content-gauge">
@@ -635,12 +635,6 @@ class AS_Content_Stream {
 					return;
 				}
 				var requestInFlight = false;
-				var heartbeatTiming = {
-					enabled: false,
-					seconds: 60,
-					remaining: 0,
-					updatedAt: Date.now()
-				};
 				function setText(name, value) {
 					var node = root.querySelector('[data-as-heartbeat="' + name + '"]');
 					if (node && node.textContent !== String(value)) {
@@ -688,28 +682,6 @@ class AS_Content_Stream {
 						select.value = selectedLanguage;
 					}
 				}
-				function updateNextCheckTiming(status) {
-					heartbeatTiming = {
-						enabled: !!status.enabled,
-						seconds: Math.max(1, parseInt(status.heartbeat_seconds, 10) || 60),
-						remaining: Math.max(0, parseInt(status.next_check_seconds, 10) || 0),
-						updatedAt: Date.now()
-					};
-				}
-				function animateNextCheckBar() {
-					var nextBar = root.querySelector('[data-as-heartbeat-bar="next"]');
-					if (nextBar) {
-						var percent = 0;
-						if (heartbeatTiming.enabled && heartbeatTiming.seconds > 0) {
-							var elapsedSinceUpdate = (Date.now() - heartbeatTiming.updatedAt) / 1000;
-							var remaining = Math.max(0, heartbeatTiming.remaining - elapsedSinceUpdate);
-							var elapsed = heartbeatTiming.seconds - Math.min(heartbeatTiming.seconds, remaining);
-							percent = Math.min(100, Math.max(0, (elapsed / heartbeatTiming.seconds) * 100));
-						}
-						nextBar.style.width = percent + '%';
-					}
-					window.requestAnimationFrame(animateNextCheckBar);
-				}
 				function refresh() {
 					if (requestInFlight) {
 						return;
@@ -725,7 +697,6 @@ class AS_Content_Stream {
 								return;
 							}
 							var status = response.data;
-							updateNextCheckTiming(status);
 							setText('parent_in_progress', status.parent_in_progress);
 							setText('parent_pending', status.parent_pending);
 							setText('child_queued', status.child_queued);
@@ -756,7 +727,6 @@ class AS_Content_Stream {
 						});
 				}
 				refresh();
-				animateNextCheckBar();
 				window.setInterval(refresh, 500);
 			}());
 		</script>
