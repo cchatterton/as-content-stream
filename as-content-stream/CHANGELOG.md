@@ -2,6 +2,11 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.59 - 2026-08-02
+
+- Smooths Settings dashboard updates with half-second polling and an in-flight request guard.
+- Animates the Heartbeat progress bar locally between AJAX refreshes.
+
 ## 0.1.58 - 2026-08-02
 
 - Makes the Heartbeat progress bar fill from left to right.

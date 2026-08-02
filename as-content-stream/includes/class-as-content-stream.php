@@ -634,6 +634,13 @@ class AS_Content_Stream {
 				if (!heartbeat || !root || !window.ajaxurl) {
 					return;
 				}
+				var requestInFlight = false;
+				var heartbeatTiming = {
+					enabled: false,
+					seconds: 60,
+					remaining: 0,
+					updatedAt: Date.now()
+				};
 				function setText(name, value) {
 					var node = root.querySelector('[data-as-heartbeat="' + name + '"]');
 					if (node && node.textContent !== String(value)) {
@@ -681,7 +688,33 @@ class AS_Content_Stream {
 						select.value = selectedLanguage;
 					}
 				}
+				function updateNextCheckTiming(status) {
+					heartbeatTiming = {
+						enabled: !!status.enabled,
+						seconds: Math.max(1, parseInt(status.heartbeat_seconds, 10) || 60),
+						remaining: Math.max(0, parseInt(status.next_check_seconds, 10) || 0),
+						updatedAt: Date.now()
+					};
+				}
+				function animateNextCheckBar() {
+					var nextBar = root.querySelector('[data-as-heartbeat-bar="next"]');
+					if (nextBar) {
+						var percent = 0;
+						if (heartbeatTiming.enabled && heartbeatTiming.seconds > 0) {
+							var elapsedSinceUpdate = (Date.now() - heartbeatTiming.updatedAt) / 1000;
+							var remaining = Math.max(0, heartbeatTiming.remaining - elapsedSinceUpdate);
+							var elapsed = heartbeatTiming.seconds - Math.min(heartbeatTiming.seconds, remaining);
+							percent = Math.min(100, Math.max(0, (elapsed / heartbeatTiming.seconds) * 100));
+						}
+						nextBar.style.width = percent + '%';
+					}
+					window.requestAnimationFrame(animateNextCheckBar);
+				}
 				function refresh() {
+					if (requestInFlight) {
+						return;
+					}
+					requestInFlight = true;
 					var data = new window.FormData();
 					data.append('action', 'as_content_stream_heartbeat');
 					data.append('nonce', heartbeat.getAttribute('data-nonce'));
@@ -692,6 +725,7 @@ class AS_Content_Stream {
 								return;
 							}
 							var status = response.data;
+							updateNextCheckTiming(status);
 							setText('parent_in_progress', status.parent_in_progress);
 							setText('parent_pending', status.parent_pending);
 							setText('child_queued', status.child_queued);
@@ -711,19 +745,19 @@ class AS_Content_Stream {
 							if (parentBar) {
 								parentBar.style.width = status.parent_pressure_percent + '%';
 							}
-							var nextBar = root.querySelector('[data-as-heartbeat-bar="next"]');
-							if (nextBar) {
-								nextBar.style.width = status.next_check_percent + '%';
-							}
 							var childBar = root.querySelector('[data-as-heartbeat-bar="child"]');
 							if (childBar) {
 								childBar.style.width = status.child_obstructed_percent + '%';
 							}
 						})
-						.catch(function () {});
+						.catch(function () {})
+						.finally(function () {
+							requestInFlight = false;
+						});
 				}
 				refresh();
-				window.setInterval(refresh, 1000);
+				animateNextCheckBar();
+				window.setInterval(refresh, 500);
 			}());
 		</script>
 		<?php
@@ -4931,6 +4965,7 @@ class AS_Content_Stream {
 
 		return array(
 			'enabled'                => $enabled,
+			'heartbeat_seconds'      => $heartbeat_seconds,
 			'next_check_seconds'     => $next_check_seconds,
 			'next_check_percent'     => $next_check_percent,
 			'phase'                  => isset( $telemetry['phase'] ) ? sanitize_key( $telemetry['phase'] ) : 'idle',
