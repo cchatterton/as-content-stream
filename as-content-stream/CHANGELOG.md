@@ -2,6 +2,13 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.57 - 2026-08-02
+
+- Renames the first Settings tile to Options.
+- Adds a configurable heartbeat interval in seconds, defaulting to 60.
+- Schedules automatic processing using the configured heartbeat interval.
+- Replaces the numeric heartbeat countdown with a green progress bar paced by the configured interval.
+
 ## 0.1.56 - 2026-08-02
 
 - Rolls back adding the post title search query to Processing Queue post type links.

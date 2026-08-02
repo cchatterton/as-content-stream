@@ -16,6 +16,7 @@ class AS_Content_Stream {
 	const OPTION_TARGET_LANGUAGE = 'as_content_stream_target_language';
 	const OPTION_CAPTURE_STATUS  = 'as_content_stream_capture_status';
 	const OPTION_PROCESSING_ENABLED = 'as_content_stream_processing_enabled';
+	const OPTION_HEARTBEAT_SECONDS = 'as_content_stream_heartbeat_seconds';
 	const OPTION_TELEMETRY       = 'as_content_stream_telemetry';
 	const OPTION_TARGET_SIGNATURE = 'as_content_stream_target_signature';
 	const NONCE_SETTINGS         = 'as_content_stream_settings';
@@ -526,6 +527,7 @@ class AS_Content_Stream {
 		$log_count = $this->get_processing_log_count();
 		$language_counts = $this->get_language_counts( $sites );
 		$target_language = $this->get_effective_target_language( $language_counts );
+		$heartbeat_seconds = self::get_heartbeat_seconds();
 		$processing_enabled = (bool) get_site_option( self::OPTION_PROCESSING_ENABLED, false );
 		$heartbeat = $this->get_heartbeat_status();
 		$wpml_sites   = array_filter(
@@ -538,12 +540,12 @@ class AS_Content_Stream {
 		?>
 		<div class="as-content-grid as-content-settings-grid">
 			<div class="as-content-panel as-content-target-language-panel">
-				<h2><?php esc_html_e( 'Target Language', 'as-content-stream' ); ?></h2>
+				<h2><?php esc_html_e( 'Options', 'as-content-stream' ); ?></h2>
 				<form class="as-content-panel-form" method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_save_settings' ) ); ?>">
 					<?php wp_nonce_field( self::NONCE_SETTINGS ); ?>
-					<input type="hidden" name="settings_context" value="target_language">
+					<input type="hidden" name="settings_context" value="options">
 					<div class="as-content-panel-body">
-						<label class="screen-reader-text" for="as-content-target-language"><?php esc_html_e( 'Target language', 'as-content-stream' ); ?></label>
+						<label class="as-content-field-label" for="as-content-target-language"><?php esc_html_e( 'Target Language', 'as-content-stream' ); ?></label>
 						<select id="as-content-target-language" class="as-content-select" name="target_language">
 						<?php if ( empty( $language_counts ) ) : ?>
 							<option value=""><?php esc_html_e( 'No destination languages available', 'as-content-stream' ); ?></option>
@@ -555,6 +557,8 @@ class AS_Content_Stream {
 							<?php endforeach; ?>
 						<?php endif; ?>
 						</select>
+						<label class="as-content-field-label" for="as-content-heartbeat-seconds"><?php esc_html_e( 'Heartbeat Seconds', 'as-content-stream' ); ?></label>
+						<input id="as-content-heartbeat-seconds" class="as-content-number-input" type="number" name="heartbeat_seconds" min="1" step="1" value="<?php echo esc_attr( $heartbeat_seconds ); ?>">
 					</div>
 					<div class="as-content-panel-actions">
 						<button type="submit" class="button button-primary"><?php esc_html_e( 'Save Settings', 'as-content-stream' ); ?></button>
@@ -584,11 +588,14 @@ class AS_Content_Stream {
 			<div class="as-content-panel">
 				<h2><?php esc_html_e( 'Heartbeat', 'as-content-stream' ); ?></h2>
 				<div id="as-content-heartbeat" data-nonce="<?php echo esc_attr( wp_create_nonce( self::NONCE_HEARTBEAT ) ); ?>">
-					<table class="as-content-metric-table as-content-heartbeat-meta">
-						<tbody>
-							<tr><th scope="row"><?php esc_html_e( 'Next check', 'as-content-stream' ); ?></th><td><span data-as-heartbeat="next_check"><?php echo esc_html( $heartbeat['next_check_seconds'] ); ?></span> <?php esc_html_e( 'sec', 'as-content-stream' ); ?></td></tr>
-						</tbody>
-					</table>
+					<div class="as-content-gauge">
+						<div class="as-content-gauge-meta">
+							<span><?php esc_html_e( 'Next check', 'as-content-stream' ); ?></span>
+						</div>
+						<div class="as-content-progress as-content-progress-success as-content-progress-reverse" aria-hidden="true">
+							<span data-as-heartbeat-bar="next" style="width: <?php echo esc_attr( $heartbeat['next_check_percent'] ); ?>%;"></span>
+						</div>
+					</div>
 					<div class="as-content-gauge">
 						<div class="as-content-gauge-meta">
 							<span><?php esc_html_e( 'In progress / Pending', 'as-content-stream' ); ?></span>
@@ -685,7 +692,6 @@ class AS_Content_Stream {
 								return;
 							}
 							var status = response.data;
-							setText('next_check', status.next_check_seconds);
 							setText('parent_in_progress', status.parent_in_progress);
 							setText('parent_pending', status.parent_pending);
 							setText('child_queued', status.child_queued);
@@ -704,6 +710,10 @@ class AS_Content_Stream {
 							var parentBar = root.querySelector('[data-as-heartbeat-bar="parent"]');
 							if (parentBar) {
 								parentBar.style.width = status.parent_pressure_percent + '%';
+							}
+							var nextBar = root.querySelector('[data-as-heartbeat-bar="next"]');
+							if (nextBar) {
+								nextBar.style.width = status.next_check_percent + '%';
 							}
 							var childBar = root.querySelector('[data-as-heartbeat-bar="child"]');
 							if (childBar) {
@@ -1116,6 +1126,16 @@ class AS_Content_Stream {
 
 		update_site_option( self::OPTION_TARGET_LANGUAGE, $target_language );
 
+		$heartbeat_changed = false;
+		if ( isset( $_POST['heartbeat_seconds'] ) ) {
+			$heartbeat_seconds = absint( wp_unslash( $_POST['heartbeat_seconds'] ) );
+			if ( $heartbeat_seconds < 1 ) {
+				$heartbeat_seconds = MINUTE_IN_SECONDS;
+			}
+			$heartbeat_changed = $heartbeat_seconds !== self::get_heartbeat_seconds();
+			update_site_option( self::OPTION_HEARTBEAT_SECONDS, $heartbeat_seconds );
+		}
+
 		if ( 'processing' === $settings_context ) {
 			$processing_enabled = ! empty( $_POST['processing_enabled'] );
 			update_site_option( self::OPTION_PROCESSING_ENABLED, $processing_enabled ? 1 : 0 );
@@ -1125,6 +1145,9 @@ class AS_Content_Stream {
 			} else {
 				self::unschedule_cron();
 			}
+		} elseif ( $heartbeat_changed && get_site_option( self::OPTION_PROCESSING_ENABLED, false ) ) {
+			self::unschedule_cron();
+			self::schedule_cron();
 		}
 
 		wp_safe_redirect( $this->admin_url( array( 'tab' => 'settings', 'updated' => 1 ) ) );
@@ -1146,15 +1169,15 @@ class AS_Content_Stream {
 	}
 
 	/**
-	 * Add one-minute cron schedule.
+	 * Add Content Stream cron schedule.
 	 *
 	 * @param array<string,array<string,mixed>> $schedules Schedules.
 	 * @return array<string,array<string,mixed>>
 	 */
 	public function add_cron_schedules( $schedules ) {
-		$schedules['as_content_stream_minute'] = array(
-			'interval' => MINUTE_IN_SECONDS,
-			'display'  => __( 'Every minute', 'as-content-stream' ),
+		$schedules['as_content_stream_interval'] = array(
+			'interval' => self::get_heartbeat_seconds(),
+			'display'  => __( 'Content Stream heartbeat interval', 'as-content-stream' ),
 		);
 
 		return $schedules;
@@ -1167,7 +1190,8 @@ class AS_Content_Stream {
 	 */
 	private static function schedule_cron() {
 		if ( ! wp_next_scheduled( self::CRON_HOOK ) ) {
-			wp_schedule_event( time() + MINUTE_IN_SECONDS, 'as_content_stream_minute', self::CRON_HOOK );
+			$interval = self::get_heartbeat_seconds();
+			wp_schedule_event( time() + $interval, 'as_content_stream_interval', self::CRON_HOOK );
 		}
 	}
 
@@ -4870,6 +4894,13 @@ class AS_Content_Stream {
 		$telemetry = get_site_option( self::OPTION_TELEMETRY, array() );
 		$telemetry = is_array( $telemetry ) ? $telemetry : array();
 		$next = wp_next_scheduled( self::CRON_HOOK );
+		$heartbeat_seconds = self::get_heartbeat_seconds();
+		$next_check_seconds = $enabled && $next ? max( 0, $next - time() ) : 0;
+		$next_check_percent = 0;
+		if ( $enabled && $next ) {
+			$elapsed = max( 0, $heartbeat_seconds - min( $heartbeat_seconds, $next_check_seconds ) );
+			$next_check_percent = min( 100, round( ( $elapsed / $heartbeat_seconds ) * 100 ) );
+		}
 		$queue_counts = $this->get_queue_counts();
 		$processing_counts = $this->get_processing_queue_counts();
 		$queue_action_counts = $this->get_queue_action_counts();
@@ -4900,7 +4931,8 @@ class AS_Content_Stream {
 
 		return array(
 			'enabled'                => $enabled,
-			'next_check_seconds'     => $enabled && $next ? max( 0, $next - time() ) : 0,
+			'next_check_seconds'     => $next_check_seconds,
+			'next_check_percent'     => $next_check_percent,
 			'phase'                  => isset( $telemetry['phase'] ) ? sanitize_key( $telemetry['phase'] ) : 'idle',
 			'current_source_id'      => $current_source_id,
 			'parent_pending'         => $parent_pending,
@@ -4926,6 +4958,17 @@ class AS_Content_Stream {
 			'target_language'        => $target_language,
 			'target_language_labels' => $target_language_labels,
 		);
+	}
+
+	/**
+	 * Get the configured cron heartbeat interval.
+	 *
+	 * @return int
+	 */
+	private static function get_heartbeat_seconds() {
+		$seconds = (int) get_site_option( self::OPTION_HEARTBEAT_SECONDS, MINUTE_IN_SECONDS );
+
+		return $seconds > 0 ? $seconds : MINUTE_IN_SECONDS;
 	}
 
 	/**

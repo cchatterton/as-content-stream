@@ -173,6 +173,24 @@
 	width: 100%;
 }
 
+.as-content-field-label {
+	color: #3c434a;
+	display: block;
+	font-weight: 600;
+	margin: 12px 0 6px;
+}
+
+.as-content-field-label:first-child {
+	margin-top: 0;
+}
+
+.as-content-number-input {
+	box-sizing: border-box;
+	min-height: 34px;
+	max-width: 100%;
+	width: 100%;
+}
+
 .as-content-toggle {
 	align-items: center;
 	display: flex;
@@ -211,6 +229,14 @@
 	display: block;
 	height: 100%;
 	transition: width 160ms ease;
+}
+
+.as-content-progress-reverse span {
+	margin-left: auto;
+}
+
+.as-content-progress-success span {
+	background: #008a20;
 }
 
 .as-content-progress-danger span {
