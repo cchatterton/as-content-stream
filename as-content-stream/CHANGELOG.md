@@ -2,6 +2,10 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.53 - 2026-08-02
+
+- Fixed post type links in Processing Queue, Log, and Streaming Map to open the destination site's list view using the row's streaming language.
+
 ## 0.1.52 - 2026-08-02
 
 - Collapses Streaming Map rows by current source post, destination site, post type, and language instead of letting separate actions appear as duplicate map rows.

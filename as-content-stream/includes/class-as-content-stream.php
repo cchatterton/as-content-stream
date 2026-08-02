@@ -865,7 +865,7 @@ class AS_Content_Stream {
 					<?php
 					$payload = $this->decode_queue_payload( $item->payload );
 					$source_url = $this->source_edit_url( (int) $item->source_blog_id, (int) $item->source_post_id );
-					$post_type_url = $this->post_type_list_url( (int) $item->source_blog_id, sanitize_key( $item->post_type ), sanitize_key( $item->target_language ) );
+					$post_type_url = $this->post_type_list_url( (int) $item->target_blog_id, sanitize_key( $item->post_type ), sanitize_key( $item->target_language ) );
 					$destination_post_id = $this->destination_post_id_for_processing_item( $item, $payload );
 					$destination_post_url = $destination_post_id ? $this->source_edit_url( (int) $item->target_blog_id, $destination_post_id ) : '';
 					$is_blocked = 'blocked' === sanitize_key( $item->status ) || ! empty( $item->blocked_by );
@@ -962,7 +962,7 @@ class AS_Content_Stream {
 					<?php
 					$payload = $this->decode_queue_payload( $item->payload );
 					$source_url = $this->source_edit_url( (int) $item->source_blog_id, (int) $item->source_post_id );
-					$post_type_url = $this->post_type_list_url( (int) $item->source_blog_id, sanitize_key( $item->post_type ), sanitize_key( $item->target_language ) );
+					$post_type_url = $this->post_type_list_url( (int) $item->target_blog_id, sanitize_key( $item->post_type ), sanitize_key( $item->target_language ) );
 					$destination_post_id = $this->destination_post_id_for_processing_item( $item, $payload );
 					$destination_post_url = $destination_post_id ? $this->source_edit_url( (int) $item->target_blog_id, $destination_post_id ) : '';
 					$post_title = isset( $payload['post_title'] ) ? $payload['post_title'] : $this->get_post_title_from_site( (int) $item->source_blog_id, (int) $item->source_post_id );
@@ -1048,7 +1048,7 @@ class AS_Content_Stream {
 					<?php
 					$source_url = $this->source_edit_url( (int) $link->source_blog_id, (int) $link->source_post_id );
 					$target_url = $this->source_edit_url( (int) $link->target_blog_id, (int) $link->target_post_id );
-					$post_type_url = $this->post_type_list_url( (int) $link->source_blog_id, sanitize_key( $link->source_post_type ), sanitize_key( $link->target_language ) );
+					$post_type_url = $this->post_type_list_url( (int) $link->target_blog_id, sanitize_key( $link->source_post_type ), sanitize_key( $link->target_language ) );
 					$post_title = $this->get_post_title_from_site( (int) $link->source_blog_id, (int) $link->source_post_id );
 					?>
 					<tr>
