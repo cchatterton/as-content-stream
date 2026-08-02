@@ -2,6 +2,12 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.62 - 2026-08-02
+
+- Splits the Heartbeat queue bars into a lightweight half-second AJAX pulse so those two bars update together.
+- Refreshes queue pulse counts when the Heartbeat timer animation resets.
+- Moves heavier Settings dashboard status refreshes to a slower background cadence.
+
 ## 0.1.61 - 2026-08-02
 
 - Adds a Published Content count as the first item in the Network Status tile.

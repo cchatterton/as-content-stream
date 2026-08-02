@@ -124,6 +124,7 @@ class AS_Content_Stream {
 		add_action( 'admin_init', array( $this, 'normalize_streaming_map_rows' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'enqueue_admin_assets' ) );
 		add_action( 'wp_ajax_as_content_stream_heartbeat', array( $this, 'ajax_heartbeat' ) );
+		add_action( 'wp_ajax_as_content_stream_queue_pulse', array( $this, 'ajax_queue_pulse' ) );
 		add_action( self::CRON_HOOK, array( $this, 'process_tick' ) );
 		add_filter( 'cron_schedules', array( $this, 'add_cron_schedules' ) );
 		add_filter( 'authenticate', array( $this, 'block_stream_author_authentication' ), 30, 3 );
@@ -636,7 +637,8 @@ class AS_Content_Stream {
 				if (!heartbeat || !root || !window.ajaxurl) {
 					return;
 				}
-				var requestInFlight = false;
+				var statusRequestInFlight = false;
+				var pulseRequestInFlight = false;
 				function setText(name, value) {
 					var node = root.querySelector('[data-as-heartbeat="' + name + '"]');
 					if (node && node.textContent !== String(value)) {
@@ -684,11 +686,26 @@ class AS_Content_Stream {
 						select.value = selectedLanguage;
 					}
 				}
-				function refresh() {
-					if (requestInFlight) {
+				function updateQueuePulse(status) {
+					setText('parent_in_progress', status.parent_in_progress);
+					setText('parent_pending', status.parent_pending);
+					setText('child_queued', status.child_queued);
+					setText('child_blocked', status.child_blocked);
+					setText('child_failed', status.child_failed);
+					var parentBar = root.querySelector('[data-as-heartbeat-bar="parent"]');
+					if (parentBar) {
+						parentBar.style.width = status.parent_pressure_percent + '%';
+					}
+					var childBar = root.querySelector('[data-as-heartbeat-bar="child"]');
+					if (childBar) {
+						childBar.style.width = status.child_obstructed_percent + '%';
+					}
+				}
+				function refreshStatus() {
+					if (statusRequestInFlight) {
 						return;
 					}
-					requestInFlight = true;
+					statusRequestInFlight = true;
 					var data = new window.FormData();
 					data.append('action', 'as_content_stream_heartbeat');
 					data.append('nonce', heartbeat.getAttribute('data-nonce'));
@@ -699,11 +716,7 @@ class AS_Content_Stream {
 								return;
 							}
 							var status = response.data;
-							setText('parent_in_progress', status.parent_in_progress);
-							setText('parent_pending', status.parent_pending);
-							setText('child_queued', status.child_queued);
-							setText('child_blocked', status.child_blocked);
-							setText('child_failed', status.child_failed);
+							updateQueuePulse(status);
 							setText('status_discovery', status.status_discovery);
 							setText('status_create', status.status_create);
 							setText('status_update', status.status_update);
@@ -715,22 +728,44 @@ class AS_Content_Stream {
 							setText('status_sites', status.status_sites);
 							setText('status_wpml_sites', status.status_wpml_sites);
 							updateTargetLanguages(status.target_language_labels, status.target_language);
-							var parentBar = root.querySelector('[data-as-heartbeat-bar="parent"]');
-							if (parentBar) {
-								parentBar.style.width = status.parent_pressure_percent + '%';
-							}
-							var childBar = root.querySelector('[data-as-heartbeat-bar="child"]');
-							if (childBar) {
-								childBar.style.width = status.child_obstructed_percent + '%';
-							}
 						})
 						.catch(function () {})
 						.finally(function () {
-							requestInFlight = false;
+							statusRequestInFlight = false;
 						});
 				}
-				refresh();
-				window.setInterval(refresh, 500);
+				function refreshQueuePulse() {
+					if (pulseRequestInFlight) {
+						return;
+					}
+					pulseRequestInFlight = true;
+					var data = new window.FormData();
+					data.append('action', 'as_content_stream_queue_pulse');
+					data.append('nonce', heartbeat.getAttribute('data-nonce'));
+					window.fetch(window.ajaxurl, { method: 'POST', credentials: 'same-origin', body: data })
+						.then(function (response) { return response.json(); })
+						.then(function (response) {
+							if (!response || !response.success || !response.data) {
+								return;
+							}
+							updateQueuePulse(response.data);
+						})
+						.catch(function () {})
+						.finally(function () {
+							pulseRequestInFlight = false;
+						});
+				}
+				var heartbeatTimer = root.querySelector('.as-content-progress-timer span');
+				if (heartbeatTimer) {
+					heartbeatTimer.addEventListener('animationiteration', function () {
+						refreshQueuePulse();
+						window.setTimeout(refreshQueuePulse, 500);
+					});
+				}
+				refreshStatus();
+				refreshQueuePulse();
+				window.setInterval(refreshQueuePulse, 500);
+				window.setInterval(refreshStatus, 5000);
 			}());
 		</script>
 		<?php
@@ -1173,6 +1208,20 @@ class AS_Content_Stream {
 
 		check_ajax_referer( self::NONCE_HEARTBEAT, 'nonce' );
 		wp_send_json_success( $this->get_heartbeat_status() );
+	}
+
+	/**
+	 * AJAX queue pulse for fast-moving heartbeat bars.
+	 *
+	 * @return void
+	 */
+	public function ajax_queue_pulse() {
+		if ( ! current_user_can( 'manage_options' ) ) {
+			wp_send_json_error();
+		}
+
+		check_ajax_referer( self::NONCE_HEARTBEAT, 'nonce' );
+		wp_send_json_success( $this->get_queue_pulse_status() );
 	}
 
 	/**
@@ -4932,8 +4981,7 @@ class AS_Content_Stream {
 			$elapsed = max( 0, $heartbeat_seconds - min( $heartbeat_seconds, $next_check_seconds ) );
 			$next_check_percent = min( 100, round( ( $elapsed / $heartbeat_seconds ) * 100 ) );
 		}
-		$queue_counts = $this->get_queue_counts();
-		$processing_counts = $this->get_processing_queue_counts();
+		$queue_pulse = $this->get_queue_pulse_status();
 		$queue_action_counts = $this->get_queue_action_counts();
 		$sites = $this->discover_sites();
 		$wpml_sites = array_filter(
@@ -4949,16 +4997,6 @@ class AS_Content_Stream {
 			$target_language_labels[ $language ] = sprintf( '%s (%d)', $language, $count );
 		}
 		$current_source_id = isset( $telemetry['current_source_id'] ) ? (int) $telemetry['current_source_id'] : 0;
-		$parent_pending = isset( $queue_counts['pending'] ) ? (int) $queue_counts['pending'] : 0;
-		$parent_in_progress = isset( $queue_counts['in_progress'] ) ? (int) $queue_counts['in_progress'] : 0;
-		$parent_total = $parent_pending + $parent_in_progress;
-		$child_pending = isset( $processing_counts['pending'] ) ? (int) $processing_counts['pending'] : 0;
-		$child_in_progress = isset( $processing_counts['in_progress'] ) ? (int) $processing_counts['in_progress'] : 0;
-		$child_blocked = isset( $processing_counts['blocked'] ) ? (int) $processing_counts['blocked'] : 0;
-		$child_failed = isset( $processing_counts['failed'] ) ? (int) $processing_counts['failed'] : 0;
-		$child_queued = $child_pending + $child_in_progress;
-		$child_obstructed = $child_blocked + $child_failed;
-		$child_total = $child_queued + $child_obstructed;
 
 		return array(
 			'enabled'                => $enabled,
@@ -4967,17 +5005,17 @@ class AS_Content_Stream {
 			'next_check_percent'     => $next_check_percent,
 			'phase'                  => isset( $telemetry['phase'] ) ? sanitize_key( $telemetry['phase'] ) : 'idle',
 			'current_source_id'      => $current_source_id,
-			'parent_pending'         => $parent_pending,
-			'parent_in_progress'     => $parent_in_progress,
-			'parent_pressure_percent' => $parent_total > 0 ? min( 100, round( ( $parent_in_progress / $parent_total ) * 100 ) ) : 0,
-			'child_queued'           => $child_queued,
-			'child_blocked'          => $child_blocked,
-			'child_failed'           => $child_failed,
-			'child_obstructed_percent' => $child_total > 0 ? min( 100, round( ( $child_obstructed / $child_total ) * 100 ) ) : 0,
+			'parent_pending'         => $queue_pulse['parent_pending'],
+			'parent_in_progress'     => $queue_pulse['parent_in_progress'],
+			'parent_pressure_percent' => $queue_pulse['parent_pressure_percent'],
+			'child_queued'           => $queue_pulse['child_queued'],
+			'child_blocked'          => $queue_pulse['child_blocked'],
+			'child_failed'           => $queue_pulse['child_failed'],
+			'child_obstructed_percent' => $queue_pulse['child_obstructed_percent'],
 			'last_batch_duration_ms' => isset( $telemetry['last_batch_duration_ms'] ) ? (int) $telemetry['last_batch_duration_ms'] : 0,
 			'last_message'           => isset( $telemetry['last_message'] ) ? (string) $telemetry['last_message'] : __( 'No processing runs yet.', 'as-content-stream' ),
-			'queue_counts'           => $queue_counts,
-			'processing_counts'      => $processing_counts,
+			'queue_counts'           => $queue_pulse['queue_counts'],
+			'processing_counts'      => $queue_pulse['processing_counts'],
 			'status_discovery'       => isset( $queue_action_counts['discover'] ) ? (int) $queue_action_counts['discover'] : 0,
 			'status_create'          => isset( $queue_action_counts['create'] ) ? (int) $queue_action_counts['create'] : 0,
 			'status_update'          => isset( $queue_action_counts['update'] ) ? (int) $queue_action_counts['update'] : 0,
@@ -4990,6 +5028,38 @@ class AS_Content_Stream {
 			'status_wpml_sites'      => count( $wpml_sites ),
 			'target_language'        => $target_language,
 			'target_language_labels' => $target_language_labels,
+		);
+	}
+
+	/**
+	 * Get lightweight queue pulse status.
+	 *
+	 * @return array<string,mixed>
+	 */
+	private function get_queue_pulse_status() {
+		$queue_counts = $this->get_queue_counts();
+		$processing_counts = $this->get_processing_queue_counts();
+		$parent_pending = isset( $queue_counts['pending'] ) ? (int) $queue_counts['pending'] : 0;
+		$parent_in_progress = isset( $queue_counts['in_progress'] ) ? (int) $queue_counts['in_progress'] : 0;
+		$parent_total = $parent_pending + $parent_in_progress;
+		$child_pending = isset( $processing_counts['pending'] ) ? (int) $processing_counts['pending'] : 0;
+		$child_in_progress = isset( $processing_counts['in_progress'] ) ? (int) $processing_counts['in_progress'] : 0;
+		$child_blocked = isset( $processing_counts['blocked'] ) ? (int) $processing_counts['blocked'] : 0;
+		$child_failed = isset( $processing_counts['failed'] ) ? (int) $processing_counts['failed'] : 0;
+		$child_queued = $child_pending + $child_in_progress;
+		$child_obstructed = $child_blocked + $child_failed;
+		$child_total = $child_queued + $child_obstructed;
+
+		return array(
+			'parent_pending'         => $parent_pending,
+			'parent_in_progress'     => $parent_in_progress,
+			'parent_pressure_percent' => $parent_total > 0 ? min( 100, round( ( $parent_in_progress / $parent_total ) * 100 ) ) : 0,
+			'child_queued'           => $child_queued,
+			'child_blocked'          => $child_blocked,
+			'child_failed'           => $child_failed,
+			'child_obstructed_percent' => $child_total > 0 ? min( 100, round( ( $child_obstructed / $child_total ) * 100 ) ) : 0,
+			'queue_counts'           => $queue_counts,
+			'processing_counts'      => $processing_counts,
 		);
 	}
 
