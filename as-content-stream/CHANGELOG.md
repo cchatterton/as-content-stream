@@ -2,6 +2,10 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.94 - 2026-08-03
+
+- Preserves the selected Sites tab in the URL and after Clean actions, so the user returns to the same destination site panel.
+
 ## 0.1.93 - 2026-08-03
 
 - Allows action redirects to return to mapped destination site admin hosts after buttons such as Clean are clicked from that site's Content Stream screen.

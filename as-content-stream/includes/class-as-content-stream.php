@@ -612,6 +612,17 @@ class AS_Content_Stream {
 		$language_counts = $this->get_language_counts( $sites );
 		$target_language = $this->get_effective_target_language( $language_counts );
 		$last_run = get_site_option( self::OPTION_DISCOVERY_LAST_RUN, '' );
+		$active_site_id = isset( $_GET['active_site'] ) ? absint( wp_unslash( $_GET['active_site'] ) ) : 0;
+		$site_ids = array_map(
+			static function ( $site ) {
+				return isset( $site['blog_id'] ) ? (int) $site['blog_id'] : 0;
+			},
+			$sites
+		);
+		if ( ! $active_site_id || ! in_array( $active_site_id, $site_ids, true ) ) {
+			$first_site = reset( $sites );
+			$active_site_id = is_array( $first_site ) && isset( $first_site['blog_id'] ) ? (int) $first_site['blog_id'] : 0;
+		}
 		?>
 		<?php if ( empty( $sites ) ) : ?>
 			<p><?php esc_html_e( 'No sites found.', 'as-content-stream' ); ?></p>
@@ -629,7 +640,7 @@ class AS_Content_Stream {
 				$tab_post_type_rows = isset( $tab_health['post_types'] ) && is_array( $tab_health['post_types'] ) ? $tab_health['post_types'] : array();
 				$tab_aligned_percent = $this->site_aligned_percent_from_post_type_rows( $tab_post_type_rows );
 				?>
-				<button type="button" class="button button-secondary as-content-site-tab <?php echo 0 === (int) $index ? 'is-active' : ''; ?>" role="tab" aria-selected="<?php echo 0 === (int) $index ? 'true' : 'false'; ?>" aria-controls="as-content-site-<?php echo esc_attr( (int) $site['blog_id'] ); ?>" data-as-site-tab="<?php echo esc_attr( (int) $site['blog_id'] ); ?>">
+				<button type="button" class="button button-secondary as-content-site-tab <?php echo $active_site_id === (int) $site['blog_id'] ? 'is-active' : ''; ?>" role="tab" aria-selected="<?php echo $active_site_id === (int) $site['blog_id'] ? 'true' : 'false'; ?>" aria-controls="as-content-site-<?php echo esc_attr( (int) $site['blog_id'] ); ?>" data-as-site-tab="<?php echo esc_attr( (int) $site['blog_id'] ); ?>">
 					<span class="as-content-site-dot <?php echo esc_attr( ! empty( $site['wpml_active'] ) ? 'is-active' : 'is-inactive' ); ?>" aria-hidden="true"></span>
 					<span><?php echo esc_html( sprintf( '#%d %s', (int) $site['blog_id'], $site['name'] ) ); ?></span>
 					<?php if ( ! empty( $site['wpml_active'] ) ) : ?>
@@ -647,7 +658,7 @@ class AS_Content_Stream {
 				$health_status = isset( $health['status'] ) ? sanitize_key( $health['status'] ) : 'not_scanned';
 				$can_clean = ! empty( $site['wpml_active'] ) && in_array( $target_language, (array) $site['languages'], true );
 				?>
-				<section id="as-content-site-<?php echo esc_attr( $blog_id ); ?>" class="as-content-site-section <?php echo 0 === (int) $index ? 'is-active' : ''; ?>" role="tabpanel" data-as-site-panel="<?php echo esc_attr( $blog_id ); ?>">
+				<section id="as-content-site-<?php echo esc_attr( $blog_id ); ?>" class="as-content-site-section <?php echo $active_site_id === $blog_id ? 'is-active' : ''; ?>" role="tabpanel" data-as-site-panel="<?php echo esc_attr( $blog_id ); ?>">
 					<div class="as-content-site-heading">
 						<div>
 							<h2><?php echo esc_html( sprintf( '#%d %s', $blog_id, $site['name'] ) ); ?></h2>
@@ -718,6 +729,7 @@ class AS_Content_Stream {
 											<?php wp_nonce_field( self::NONCE_QUEUE ); ?>
 											<input type="hidden" name="blog_id" value="<?php echo esc_attr( $blog_id ); ?>">
 											<input type="hidden" name="post_type" value="<?php echo esc_attr( $post_type ); ?>">
+											<input type="hidden" name="redirect_to" value="<?php echo esc_url( $this->current_admin_page_url( array( 'active_site' => $blog_id ) ) ); ?>">
 											<?php submit_button( __( 'Clean', 'as-content-stream' ), 'secondary small', 'submit', false, $can_clean ? array() : array( 'disabled' => 'disabled' ) ); ?>
 										</form>
 									</td>
@@ -745,6 +757,11 @@ class AS_Content_Stream {
 					panels.forEach(function (panel) {
 						panel.classList.toggle('is-active', panel.getAttribute('data-as-site-panel') === siteId);
 					});
+					if (window.URL && window.history && window.history.replaceState) {
+						var url = new URL(window.location.href);
+						url.searchParams.set('active_site', siteId);
+						window.history.replaceState({}, '', url.toString());
+					}
 				}
 
 				tabs.forEach(function (tab) {
@@ -7765,7 +7782,10 @@ class AS_Content_Stream {
 	 * @return void
 	 */
 	private function redirect_back_to_current_screen( $args = array(), $fallback_args = array() ) {
-		$url = wp_get_referer();
+		$url = isset( $_REQUEST['redirect_to'] ) ? esc_url_raw( wp_unslash( $_REQUEST['redirect_to'] ) ) : '';
+		if ( ! $this->is_content_stream_admin_url( $url ) ) {
+			$url = wp_get_referer();
+		}
 		if ( ! $this->is_content_stream_admin_url( $url ) ) {
 			$url = $this->admin_url( $fallback_args );
 		}
@@ -7840,7 +7860,13 @@ class AS_Content_Stream {
 	 */
 	private function form_action_url( $action ) {
 		$admin_post_url = is_multisite() ? get_admin_url( get_main_site_id(), 'admin-post.php' ) : admin_url( 'admin-post.php' );
-		return add_query_arg( 'action', $action, $admin_post_url );
+		return add_query_arg(
+			array(
+				'action'      => $action,
+				'redirect_to' => $this->current_admin_page_url(),
+			),
+			$admin_post_url
+		);
 	}
 
 	/**
