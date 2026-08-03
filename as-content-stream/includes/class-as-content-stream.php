@@ -2917,6 +2917,34 @@ class AS_Content_Stream {
 	}
 
 	/**
+	 * Check whether a mapped destination matches the target language and CPT status config.
+	 *
+	 * This must be called while switched to the destination blog.
+	 *
+	 * @param array<string,mixed>|object $mapped_row Active Streaming Map row.
+	 * @param string                     $target_language Target language.
+	 * @return bool
+	 */
+	private function active_map_row_matches_config_current_site( $mapped_row, $target_language ) {
+		if ( ! $this->active_map_row_has_existing_destination_current_site( $mapped_row ) ) {
+			return false;
+		}
+
+		$target_post_id = is_array( $mapped_row ) && isset( $mapped_row['target_post_id'] ) ? (int) $mapped_row['target_post_id'] : 0;
+		if ( is_object( $mapped_row ) ) {
+			$target_post_id = isset( $mapped_row->target_post_id ) ? (int) $mapped_row->target_post_id : $target_post_id;
+		}
+
+		$post = $target_post_id ? get_post( $target_post_id ) : null;
+		if ( ! $post instanceof WP_Post ) {
+			return false;
+		}
+
+		return sanitize_key( $post->post_status ) === $this->get_post_type_stream_status( sanitize_key( $post->post_type ) )
+			&& sanitize_key( $this->get_post_language_current_site( $target_post_id, $post->post_type ) ) === sanitize_key( $target_language );
+	}
+
+	/**
 	 * Get one active Streaming Map row for a source/destination target.
 	 *
 	 * @param int    $source_post_id Source post ID.
@@ -4162,6 +4190,18 @@ class AS_Content_Stream {
 	 * @return void
 	 */
 	private function set_wpml_language_for_destination( $destination_post_id, $job ) {
+		$this->set_wpml_language_for_destination_post( $destination_post_id, sanitize_key( $job->post_type ), sanitize_key( $job->target_language ) );
+	}
+
+	/**
+	 * Assign WPML language metadata to a destination post.
+	 *
+	 * @param int    $destination_post_id Destination post ID.
+	 * @param string $post_type Post type.
+	 * @param string $target_language Target language.
+	 * @return void
+	 */
+	private function set_wpml_language_for_destination_post( $destination_post_id, $post_type, $target_language ) {
 		if ( ! has_action( 'wpml_set_element_language_details' ) ) {
 			return;
 		}
@@ -4170,9 +4210,9 @@ class AS_Content_Stream {
 			'wpml_set_element_language_details',
 			array(
 				'element_id'           => $destination_post_id,
-				'element_type'         => 'post_' . sanitize_key( $job->post_type ),
+				'element_type'         => 'post_' . sanitize_key( $post_type ),
 				'trid'                 => false,
-				'language_code'        => sanitize_key( $job->target_language ),
+				'language_code'        => sanitize_key( $target_language ),
 				'source_language_code' => null,
 			)
 		);
@@ -4663,19 +4703,38 @@ class AS_Content_Stream {
 				continue;
 			}
 
+			$target_post_id = isset( $mapped_row['target_post_id'] ) ? (int) $mapped_row['target_post_id'] : 0;
 			$restore = get_current_blog_id() !== $blog_id;
 			if ( $restore ) {
 				switch_to_blog( $blog_id );
 			}
 
-			$is_valid = $this->active_map_row_has_valid_destination_current_site( $mapped_row, $target_language );
+			$is_mapped = $this->active_map_row_has_existing_destination_current_site( $mapped_row );
+			if ( $is_mapped && $target_post_id ) {
+				$mapped_post = get_post( $target_post_id );
+				if ( $mapped_post instanceof WP_Post ) {
+					$stream_status = $this->get_post_type_stream_status( sanitize_key( $mapped_post->post_type ) );
+					if ( $stream_status !== sanitize_key( $mapped_post->post_status ) ) {
+						wp_update_post(
+							array(
+								'ID'          => $target_post_id,
+								'post_status' => $stream_status,
+							)
+						);
+					}
+
+					if ( sanitize_key( $this->get_post_language_current_site( $target_post_id, $mapped_post->post_type ) ) !== sanitize_key( $target_language ) ) {
+						$this->set_wpml_language_for_destination_post( $target_post_id, sanitize_key( $mapped_post->post_type ), $target_language );
+					}
+				}
+			}
 
 			if ( $restore ) {
 				restore_current_blog();
 			}
 
-			if ( $is_valid && ! empty( $mapped_row['target_post_id'] ) ) {
-				$mapped_ids[ (int) $mapped_row['target_post_id'] ] = true;
+			if ( $is_mapped && $target_post_id ) {
+				$mapped_ids[ $target_post_id ] = true;
 			}
 		}
 
@@ -6299,7 +6358,7 @@ class AS_Content_Stream {
 
 		foreach ( $mapped_rows as $mapped_row ) {
 			$target_post_id = isset( $mapped_row['target_post_id'] ) ? (int) $mapped_row['target_post_id'] : 0;
-			if ( ! $this->active_map_row_has_valid_destination_current_site( $mapped_row, $target_language ) ) {
+			if ( ! $this->active_map_row_has_existing_destination_current_site( $mapped_row ) ) {
 				continue;
 			}
 
@@ -6330,7 +6389,7 @@ class AS_Content_Stream {
 			}
 
 			if ( isset( $base['post_types'][ $post_type ] ) ) {
-				if ( sanitize_key( $post->post_status ) === $base['post_types'][ $post_type ]['stream_as'] ) {
+				if ( $this->active_map_row_matches_config_current_site( $mapped_row, $target_language ) ) {
 					$base['post_types'][ $post_type ]['mapped_configured']++;
 				} else {
 					$base['post_types'][ $post_type ]['mapped_off_config']++;

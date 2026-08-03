@@ -2,6 +2,12 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.86 - 2026-08-03
+
+- Reuses shared mapped and aligned audit checks across Discovery, Sites health, and Clean.
+- Counts existing mapped destination content as mapped even when it needs status or language repair.
+- Extends per-CPT Clean to repair mapped destination status and WPML language before trashing local target-language content.
+
 ## 0.1.85 - 2026-08-03
 
 - Treats active Streaming Map rows as the durable Discovery truth so mapped source content is not re-queued on every Discovery run.
