@@ -619,7 +619,7 @@ class AS_Content_Stream {
 		<?php endif; ?>
 		<div class="as-content-discovery-last-run">
 			<strong><?php esc_html_e( 'Discovery Last Run:', 'as-content-stream' ); ?></strong>
-			<?php echo esc_html( '' === (string) $last_run ? __( 'Never', 'as-content-stream' ) : get_date_from_gmt( $last_run, 'Y-m-d H:i:s' ) ); ?>
+			<?php echo esc_html( '' === (string) $last_run ? __( 'Never', 'as-content-stream' ) : $this->format_local_datetime( $last_run ) ); ?>
 		</div>
 		<div class="as-content-site-tabs" role="tablist" aria-label="<?php esc_attr_e( 'Sites', 'as-content-stream' ); ?>">
 			<?php foreach ( $sites as $index => $site ) : ?>
@@ -2771,9 +2771,21 @@ class AS_Content_Stream {
 	 * @return array<int,array<string,mixed>>
 	 */
 	private function get_target_language_post_rows( $blog_id, $target_language ) {
+		return $this->get_target_language_post_rows_for_post_types( $blog_id, $target_language, $this->get_discoverable_source_post_types() );
+	}
+
+	/**
+	 * Get target-language posts for selected post types from a destination site.
+	 *
+	 * @param int      $blog_id Destination blog ID.
+	 * @param string   $target_language Target language.
+	 * @param string[] $post_types Post types.
+	 * @return array<int,array<string,mixed>>
+	 */
+	private function get_target_language_post_rows_for_post_types( $blog_id, $target_language, $post_types ) {
 		global $wpdb;
 
-		$post_types = $this->get_discoverable_source_post_types();
+		$post_types = array_values( array_unique( array_filter( array_map( 'sanitize_key', (array) $post_types ) ) ) );
 		if ( empty( $post_types ) || '' === $target_language ) {
 			return array();
 		}
@@ -2991,6 +3003,21 @@ class AS_Content_Stream {
 			default:
 				return __( 'Not scanned', 'as-content-stream' );
 		}
+	}
+
+	/**
+	 * Format a saved UTC mysql datetime in the site's local timezone.
+	 *
+	 * @param string $datetime UTC datetime string.
+	 * @return string
+	 */
+	private function format_local_datetime( $datetime ) {
+		$timestamp = strtotime( $datetime . ' UTC' );
+		if ( false === $timestamp ) {
+			return sanitize_text_field( $datetime );
+		}
+
+		return wp_date( 'Y-m-d H:i:s', $timestamp );
 	}
 
 	/**
@@ -4696,8 +4723,6 @@ class AS_Content_Stream {
 			exit;
 		}
 
-		$rows = $this->get_target_language_post_rows( $blog_id, $target_language );
-		$mapped_ids = array();
 		foreach ( $this->get_active_mapped_target_rows( $blog_id, $target_language ) as $mapped_row ) {
 			if ( '' !== $post_type && ( empty( $mapped_row['source_post_type'] ) || $post_type !== sanitize_key( $mapped_row['source_post_type'] ) ) ) {
 				continue;
@@ -4732,12 +4757,33 @@ class AS_Content_Stream {
 			if ( $restore ) {
 				restore_current_blog();
 			}
+		}
+
+		$mapped_ids = array();
+		foreach ( $this->get_active_mapped_target_rows( $blog_id, $target_language ) as $mapped_row ) {
+			if ( '' !== $post_type && ( empty( $mapped_row['source_post_type'] ) || $post_type !== sanitize_key( $mapped_row['source_post_type'] ) ) ) {
+				continue;
+			}
+
+			$target_post_id = isset( $mapped_row['target_post_id'] ) ? (int) $mapped_row['target_post_id'] : 0;
+			$restore = get_current_blog_id() !== $blog_id;
+			if ( $restore ) {
+				switch_to_blog( $blog_id );
+			}
+
+			$is_mapped = $this->active_map_row_has_existing_destination_current_site( $mapped_row );
+
+			if ( $restore ) {
+				restore_current_blog();
+			}
 
 			if ( $is_mapped && $target_post_id ) {
 				$mapped_ids[ $target_post_id ] = true;
 			}
 		}
 
+		$row_post_types = '' === $post_type ? $this->get_discoverable_source_post_types() : array( $post_type );
+		$rows = $this->get_target_language_post_rows_for_post_types( $blog_id, $target_language, $row_post_types );
 		$restore = get_current_blog_id() !== $blog_id;
 		if ( $restore ) {
 			switch_to_blog( $blog_id );
@@ -4769,11 +4815,7 @@ class AS_Content_Stream {
 			restore_current_blog();
 		}
 
-		if ( '' !== $post_type ) {
-			$this->refresh_site_health_post_type_snapshot( $blog_id, $post_type );
-		} else {
-			$this->refresh_site_health_snapshot( $blog_id );
-		}
+		$this->refresh_site_health_snapshot( $blog_id );
 
 		wp_safe_redirect( $this->admin_url( array( 'tab' => 'sites', 'site_cleaned' => 1 ) ) );
 		exit;
@@ -6203,69 +6245,6 @@ class AS_Content_Stream {
 				return;
 			}
 		}
-	}
-
-	/**
-	 * Refresh one post type row inside a destination site health snapshot.
-	 *
-	 * @param int    $blog_id Blog ID.
-	 * @param string $post_type Post type.
-	 * @return void
-	 */
-	private function refresh_site_health_post_type_snapshot( $blog_id, $post_type ) {
-		$post_type = sanitize_key( $post_type );
-		if ( '' === $post_type ) {
-			$this->refresh_site_health_snapshot( $blog_id );
-			return;
-		}
-
-		$sites = $this->get_destination_sites_for_scan();
-		$language_counts = $this->get_language_counts( $sites );
-		$target_language = $this->get_effective_target_language( $language_counts );
-
-		foreach ( $sites as $site ) {
-			if ( (int) $site['blog_id'] !== (int) $blog_id ) {
-				continue;
-			}
-
-			$snapshots = $this->get_site_health_snapshots();
-			$fresh_snapshot = $this->build_site_health_snapshot( $site, $target_language );
-			$current_snapshot = isset( $snapshots[ (int) $blog_id ] ) ? $snapshots[ (int) $blog_id ] : $fresh_snapshot;
-			if ( isset( $fresh_snapshot['post_types'][ $post_type ] ) ) {
-				if ( ! isset( $current_snapshot['post_types'] ) || ! is_array( $current_snapshot['post_types'] ) ) {
-					$current_snapshot['post_types'] = array();
-				}
-				$current_snapshot['post_types'][ $post_type ] = $fresh_snapshot['post_types'][ $post_type ];
-				$current_snapshot['scanned_at'] = isset( $fresh_snapshot['scanned_at'] ) ? $fresh_snapshot['scanned_at'] : current_time( 'mysql', true );
-				$current_snapshot['status'] = $this->site_health_status_from_post_type_rows( $current_snapshot['post_types'] );
-				$this->save_site_health_snapshot( $blog_id, $current_snapshot );
-				return;
-			}
-
-			$this->save_site_health_snapshot( $blog_id, $fresh_snapshot );
-			return;
-		}
-	}
-
-	/**
-	 * Calculate a site-level status from post type health rows.
-	 *
-	 * @param array<string,array<string,mixed>> $post_type_rows Post type rows.
-	 * @return string
-	 */
-	private function site_health_status_from_post_type_rows( $post_type_rows ) {
-		foreach ( (array) $post_type_rows as $row ) {
-			if ( ! is_array( $row ) ) {
-				continue;
-			}
-
-			$status = isset( $row['status'] ) ? sanitize_key( $row['status'] ) : 'not_aligned';
-			if ( 'aligned' !== $status && 'inactive' !== $status ) {
-				return 'needs_clean';
-			}
-		}
-
-		return 'healthy';
 	}
 
 	/**

@@ -2,6 +2,12 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.87 - 2026-08-03
+
+- Refetches target-language destination rows after Clean repairs mapped content, so local-content trashing uses the post-clean view.
+- Rebuilds the full destination site health snapshot after Clean so site totals and per-CPT rows refresh together.
+- Displays Discovery Last Run in the site's local timezone.
+
 ## 0.1.86 - 2026-08-03
 
 - Reuses shared mapped and aligned audit checks across Discovery, Sites health, and Clean.

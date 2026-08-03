@@ -1,7 +1,7 @@
 # Content Stream
 
 Author: AlphaSys
-Version: 0.1.86
+Version: 0.1.87
 Status: POC
 
 ## Purpose
@@ -29,6 +29,8 @@ Content Stream is a network-enabled WordPress plugin scaffold for multisite cont
 - Provides a manual Run Discovery button to clear and rebuild Discovery queue rows.
 - Treats active Streaming Map rows as discovered so repeated Discovery runs do not re-queue already mapped content.
 - Uses shared mapped/aligned audit checks across Discovery, Sites health, and Clean.
+- Refetches destination rows after Clean repairs mapped content so post-type and site counters refresh from the cleaned state.
+- Displays Discovery Last Run in the site's local timezone.
 - Shows a blocking overlay while Discovery or site cleanup runs.
 - Runs Discovery only on plugin activation or a manual Run Discovery click.
 - Runs manual Discovery through AJAX batches to avoid admin request timeouts.
