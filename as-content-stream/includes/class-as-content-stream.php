@@ -369,9 +369,9 @@ class AS_Content_Stream {
 
 		$has_discovery = $this->has_discovery_queue_items();
 		$tabs       = array(
-			'settings'     => __( 'Settings', 'as-content-stream' ),
-			'sites'        => __( 'Sites & WPML', 'as-content-stream' ),
-			'post_types'   => __( 'CPT Settings', 'as-content-stream' ),
+			'settings'     => __( 'Dashboard', 'as-content-stream' ),
+			'sites'        => __( 'Sites', 'as-content-stream' ),
+			'post_types'   => __( 'Post Types', 'as-content-stream' ),
 		);
 		if ( $has_discovery ) {
 			$tabs['discovery_queue'] = __( 'Discovery Queue', 'as-content-stream' );
@@ -381,7 +381,7 @@ class AS_Content_Stream {
 		$tabs['delete_queue'] = __( 'Delete Queue', 'as-content-stream' );
 		$tabs['processing_queue'] = __( 'Processing Queue', 'as-content-stream' );
 		$tabs['links'] = __( 'Streaming Map', 'as-content-stream' );
-		$tabs['log'] = __( 'Log', 'as-content-stream' );
+		$tabs['log'] = __( 'Stream Logs', 'as-content-stream' );
 
 		if ( ! isset( $tabs[ $active_tab ] ) ) {
 			$active_tab = 'create_queue';
@@ -876,7 +876,7 @@ class AS_Content_Stream {
 						<tr><th scope="row"><?php esc_html_e( 'Processing Queue', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_processing"><?php echo esc_html( $processing_open_count ); ?></td></tr>
 						<tr><th scope="row"><?php esc_html_e( 'Streaming Map', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_streamed"><?php echo esc_html( $streamed_count ); ?></td></tr>
 						<tr><th scope="row"><?php esc_html_e( 'Difference', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_difference"><?php echo esc_html( $map_difference ); ?></td></tr>
-						<tr><th scope="row"><?php esc_html_e( 'Log', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_log"><?php echo esc_html( $log_count ); ?></td></tr>
+						<tr><th scope="row"><?php esc_html_e( 'Stream Logs', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_log"><?php echo esc_html( $log_count ); ?></td></tr>
 					</tbody>
 				</table>
 				<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_rerun_discovery' ) ); ?>" class="as-content-discovery-ajax-form" data-as-overlay-message="<?php esc_attr_e( 'Discovering...', 'as-content-stream' ); ?>" data-as-discovery-nonce="<?php echo esc_attr( wp_create_nonce( self::NONCE_QUEUE ) ); ?>" data-as-discovery-redirect="<?php echo esc_url( $this->admin_url( array( 'tab' => 'settings', 'discovery_refreshed' => 1 ) ) ); ?>">
