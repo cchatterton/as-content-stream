@@ -883,7 +883,7 @@ class AS_Content_Stream {
 						<tr><th scope="row"><?php esc_html_e( 'Stream Logs', 'as-content-stream' ); ?></th><td data-as-heartbeat="status_log"><?php echo esc_html( $log_count ); ?></td></tr>
 					</tbody>
 				</table>
-				<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_rerun_discovery' ) ); ?>" class="as-content-discovery-ajax-form" data-as-overlay-message="<?php esc_attr_e( 'Discovering...', 'as-content-stream' ); ?>" data-as-discovery-nonce="<?php echo esc_attr( wp_create_nonce( self::NONCE_QUEUE ) ); ?>" data-as-discovery-redirect="<?php echo esc_url( $this->admin_url( array( 'tab' => 'settings', 'discovery_refreshed' => 1 ) ) ); ?>">
+				<form method="post" action="<?php echo esc_url( $this->form_action_url( 'as_content_stream_rerun_discovery' ) ); ?>" class="as-content-discovery-ajax-form" data-as-overlay-message="<?php esc_attr_e( 'Discovering...', 'as-content-stream' ); ?>" data-as-discovery-nonce="<?php echo esc_attr( wp_create_nonce( self::NONCE_QUEUE ) ); ?>" data-as-discovery-redirect="<?php echo esc_url( $this->current_admin_page_url( array( 'discovery_refreshed' => 1 ) ) ); ?>">
 					<?php wp_nonce_field( self::NONCE_QUEUE ); ?>
 					<?php submit_button( __( 'Run Discovery', 'as-content-stream' ), 'secondary', 'submit', false ); ?>
 				</form>
@@ -1665,8 +1665,7 @@ class AS_Content_Stream {
 			self::schedule_cron();
 		}
 
-		wp_safe_redirect( $this->admin_url( array( 'tab' => 'settings', 'updated' => 1 ) ) );
-		exit;
+		$this->redirect_back_to_current_screen( array( 'updated' => 1 ), array( 'tab' => 'settings' ) );
 	}
 
 	/**
@@ -1702,8 +1701,7 @@ class AS_Content_Stream {
 		$this->reconcile_current_streaming_map_rows();
 		$this->refresh_site_health_snapshots();
 
-		wp_safe_redirect( $this->admin_url( array( 'tab' => 'post_types', 'updated' => 1 ) ) );
-		exit;
+		$this->redirect_back_to_current_screen( array( 'updated' => 1 ), array( 'tab' => 'post_types' ) );
 	}
 
 	/**
@@ -1956,8 +1954,7 @@ class AS_Content_Stream {
 			$this->process_tick( true, 1 );
 		}
 
-		wp_safe_redirect( $this->admin_url( array( 'tab' => 'processing_queue' ) ) );
-		exit;
+		$this->redirect_back_to_current_screen( array(), array( 'tab' => 'processing_queue' ) );
 	}
 
 	/**
@@ -4302,8 +4299,7 @@ class AS_Content_Stream {
 		global $wpdb;
 		$wpdb->delete( self::queue_table_name(), array( 'status' => 'pending' ), array( '%s' ) );
 
-		wp_safe_redirect( $this->admin_url( array( 'tab' => 'create_queue', 'queue_cleared' => 1 ) ) );
-		exit;
+		$this->redirect_back_to_current_screen( array( 'queue_cleared' => 1 ), array( 'tab' => 'create_queue' ) );
 	}
 
 	/**
@@ -4336,8 +4332,7 @@ class AS_Content_Stream {
 			}
 		}
 
-		wp_safe_redirect( $this->admin_url( array( 'tab' => 'processing_queue' ) ) );
-		exit;
+		$this->redirect_back_to_current_screen( array(), array( 'tab' => 'processing_queue' ) );
 	}
 
 	/**
@@ -4376,8 +4371,7 @@ class AS_Content_Stream {
 			}
 		}
 
-		wp_safe_redirect( $this->admin_url( array( 'tab' => $tab ) ) );
-		exit;
+		$this->redirect_back_to_current_screen( array(), array( 'tab' => $tab ) );
 	}
 
 	/**
@@ -4693,8 +4687,7 @@ class AS_Content_Stream {
 		$this->clear_open_discovery_work();
 		$this->refresh_discovery_queue();
 
-		wp_safe_redirect( $this->admin_url( array( 'tab' => 'settings', 'discovery_refreshed' => 1 ) ) );
-		exit;
+		$this->redirect_back_to_current_screen( array( 'discovery_refreshed' => 1 ), array( 'tab' => 'settings' ) );
 	}
 
 	/**
@@ -4712,8 +4705,7 @@ class AS_Content_Stream {
 		$blog_id = isset( $_POST['blog_id'] ) ? absint( wp_unslash( $_POST['blog_id'] ) ) : 0;
 		$post_type = isset( $_POST['post_type'] ) ? sanitize_key( wp_unslash( $_POST['post_type'] ) ) : '';
 		if ( ! $blog_id || $blog_id === (int) get_main_site_id() ) {
-			wp_safe_redirect( $this->admin_url( array( 'tab' => 'sites' ) ) );
-			exit;
+			$this->redirect_back_to_current_screen( array(), array( 'tab' => 'sites' ) );
 		}
 
 		$sites = $this->get_destination_sites_for_scan();
@@ -4728,12 +4720,10 @@ class AS_Content_Stream {
 		$language_counts = $this->get_language_counts( $sites );
 		$target_language = $this->get_effective_target_language( $language_counts );
 		if ( ! $site || empty( $site['wpml_active'] ) || '' === $target_language || ! in_array( $target_language, (array) $site['languages'], true ) ) {
-			wp_safe_redirect( $this->admin_url( array( 'tab' => 'sites' ) ) );
-			exit;
+			$this->redirect_back_to_current_screen( array(), array( 'tab' => 'sites' ) );
 		}
 		if ( '' !== $post_type && ! in_array( $post_type, $this->get_discoverable_source_post_types(), true ) ) {
-			wp_safe_redirect( $this->admin_url( array( 'tab' => 'sites' ) ) );
-			exit;
+			$this->redirect_back_to_current_screen( array(), array( 'tab' => 'sites' ) );
 		}
 
 		foreach ( $this->get_active_mapped_target_rows( $blog_id, $target_language ) as $mapped_row ) {
@@ -4830,8 +4820,7 @@ class AS_Content_Stream {
 
 		$this->refresh_site_health_snapshot( $blog_id );
 
-		wp_safe_redirect( $this->admin_url( array( 'tab' => 'sites', 'site_cleaned' => 1 ) ) );
-		exit;
+		$this->redirect_back_to_current_screen( array( 'site_cleaned' => 1 ), array( 'tab' => 'sites' ) );
 	}
 
 	/**
@@ -5114,8 +5103,7 @@ class AS_Content_Stream {
 		self::create_processing_queue_table();
 		$wpdb->query( "DELETE FROM " . self::processing_queue_table_name() . " WHERE status = 'complete'" );
 
-		wp_safe_redirect( $this->admin_url( array( 'tab' => 'log', 'log_cleared' => 1 ) ) );
-		exit;
+		$this->redirect_back_to_current_screen( array( 'log_cleared' => 1 ), array( 'tab' => 'log' ) );
 	}
 
 	/**
@@ -5150,8 +5138,7 @@ class AS_Content_Stream {
 			}
 		}
 
-		wp_safe_redirect( $this->admin_url( array( 'tab' => 'processing_queue' ) ) );
-		exit;
+		$this->redirect_back_to_current_screen( array(), array( 'tab' => 'processing_queue' ) );
 	}
 
 	/**
@@ -5194,8 +5181,7 @@ class AS_Content_Stream {
 			);
 		}
 
-		wp_safe_redirect( $this->admin_url( array( 'tab' => 'processing_queue', 'deleted' => 1 ) ) );
-		exit;
+		$this->redirect_back_to_current_screen( array( 'deleted' => 1 ), array( 'tab' => 'processing_queue' ) );
 	}
 
 	/**
@@ -5221,8 +5207,7 @@ class AS_Content_Stream {
 			}
 		}
 
-		wp_safe_redirect( $this->admin_url( array( 'tab' => 'links' ) ) );
-		exit;
+		$this->redirect_back_to_current_screen( array(), array( 'tab' => 'links' ) );
 	}
 
 	/**
@@ -7742,6 +7727,81 @@ class AS_Content_Stream {
 	private function admin_url( $args = array() ) {
 		$admin_url = is_multisite() ? get_admin_url( get_main_site_id(), 'admin.php' ) : admin_url( 'admin.php' );
 		return add_query_arg( array_merge( array( 'page' => self::PAGE_SLUG ), $args ), $admin_url );
+	}
+
+	/**
+	 * Get the current Content Stream admin URL with optional query args.
+	 *
+	 * @param array<string,mixed> $args Query args.
+	 * @return string
+	 */
+	private function current_admin_page_url( $args = array() ) {
+		$url = '';
+		if ( isset( $_SERVER['HTTP_HOST'], $_SERVER['REQUEST_URI'] ) ) {
+			$scheme = is_ssl() ? 'https://' : 'http://';
+			$url = $scheme . sanitize_text_field( wp_unslash( $_SERVER['HTTP_HOST'] ) ) . esc_url_raw( wp_unslash( $_SERVER['REQUEST_URI'] ) );
+		}
+		if ( ! $url ) {
+			$url = wp_get_referer();
+		}
+
+		if ( ! $this->is_content_stream_admin_url( $url ) ) {
+			$url = $this->admin_url( array( 'tab' => 'settings' ) );
+		}
+
+		$url = remove_query_arg(
+			array( 'updated', 'deleted', 'queue_cleared', 'site_cleaned', 'discovery_refreshed', 'log_cleared' ),
+			$url
+		);
+
+		return empty( $args ) ? $url : add_query_arg( $args, $url );
+	}
+
+	/**
+	 * Redirect an admin-post action back to the screen where it was clicked.
+	 *
+	 * @param array<string,mixed> $args Query args to add.
+	 * @param array<string,mixed> $fallback_args Fallback Content Stream args.
+	 * @return void
+	 */
+	private function redirect_back_to_current_screen( $args = array(), $fallback_args = array() ) {
+		$url = wp_get_referer();
+		if ( ! $this->is_content_stream_admin_url( $url ) ) {
+			$url = $this->admin_url( $fallback_args );
+		}
+
+		$url = remove_query_arg(
+			array( 'updated', 'deleted', 'queue_cleared', 'site_cleaned', 'discovery_refreshed', 'log_cleared' ),
+			$url
+		);
+
+		if ( ! empty( $args ) ) {
+			$url = add_query_arg( $args, $url );
+		}
+
+		wp_safe_redirect( $url );
+		exit;
+	}
+
+	/**
+	 * Check whether a URL belongs to the Content Stream admin page.
+	 *
+	 * @param string|false $url URL to inspect.
+	 * @return bool
+	 */
+	private function is_content_stream_admin_url( $url ) {
+		if ( empty( $url ) ) {
+			return false;
+		}
+
+		$query = wp_parse_url( $url, PHP_URL_QUERY );
+		if ( empty( $query ) ) {
+			return false;
+		}
+
+		parse_str( $query, $args );
+
+		return isset( $args['page'] ) && self::PAGE_SLUG === sanitize_key( $args['page'] );
 	}
 
 	/**

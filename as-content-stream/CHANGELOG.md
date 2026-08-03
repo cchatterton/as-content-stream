@@ -2,6 +2,10 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.92 - 2026-08-03
+
+- Returns admin-post actions to the current Content Stream screen after Run, Clean, Save, delete, and Discovery actions.
+
 ## 0.1.91 - 2026-08-03
 
 - Splits Sites mapped off-config counts into Wrong Status and Wrong Language so mapped totals explain destination language gaps.
