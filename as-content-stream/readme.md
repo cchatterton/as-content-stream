@@ -1,7 +1,7 @@
 # Content Stream
 
 Author: AlphaSys
-Version: 0.1.87
+Version: 0.1.88
 Status: POC
 
 ## Purpose
@@ -31,6 +31,7 @@ Content Stream is a network-enabled WordPress plugin scaffold for multisite cont
 - Uses shared mapped/aligned audit checks across Discovery, Sites health, and Clean.
 - Refetches destination rows after Clean repairs mapped content so post-type and site counters refresh from the cleaned state.
 - Displays Discovery Last Run in the site's local timezone.
+- Supports `Last` in the Log post ID lookup to show the latest 100 completed jobs.
 - Shows a blocking overlay while Discovery or site cleanup runs.
 - Runs Discovery only on plugin activation or a manual Run Discovery click.
 - Runs manual Discovery through AJAX batches to avoid admin request timeouts.

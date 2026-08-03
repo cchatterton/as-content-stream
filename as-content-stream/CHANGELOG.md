@@ -2,6 +2,10 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.88 - 2026-08-03
+
+- Supports `Last` in the Log post ID lookup, case-insensitively, to show the latest 100 completed processing jobs.
+
 ## 0.1.87 - 2026-08-03
 
 - Refetches target-language destination rows after Clean repairs mapped content, so local-content trashing uses the post-clean view.

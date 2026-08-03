@@ -1159,27 +1159,36 @@ class AS_Content_Stream {
 	 * @return void
 	 */
 	private function render_log_tab() {
-		$lookup_id = isset( $_GET['lookup_id'] ) ? absint( $_GET['lookup_id'] ) : 0;
-		$limit = 50;
-		$snapshot_id = $this->get_processing_queue_snapshot_id( true, $lookup_id );
-		$items = $lookup_id ? $this->get_processing_queue_items( true, $lookup_id, $limit, 0, $snapshot_id ) : array();
+		$lookup_raw = isset( $_GET['lookup_id'] ) ? sanitize_text_field( wp_unslash( $_GET['lookup_id'] ) ) : '';
+		$show_last = 'last' === strtolower( trim( $lookup_raw ) );
+		$lookup_id = $show_last ? 0 : absint( $lookup_raw );
+		$limit = $show_last ? 100 : 50;
+		$snapshot_id = $lookup_id ? $this->get_processing_queue_snapshot_id( true, $lookup_id ) : 0;
+		$items = array();
+		if ( $show_last ) {
+			$items = $this->get_processing_queue_items( true, 0, $limit, 0, 0 );
+		} elseif ( $lookup_id ) {
+			$items = $this->get_processing_queue_items( true, $lookup_id, $limit, 0, $snapshot_id );
+		}
 		?>
 		<div class="as-content-queue-actions">
 			<form method="get" action="<?php echo esc_url( admin_url( 'admin.php' ) ); ?>" class="as-content-inline-form">
 				<input type="hidden" name="page" value="<?php echo esc_attr( self::PAGE_SLUG ); ?>">
 				<input type="hidden" name="tab" value="log">
 				<label for="as-content-log-lookup"><?php esc_html_e( 'Post ID lookup', 'as-content-stream' ); ?></label>
-				<input id="as-content-log-lookup" type="number" min="1" name="lookup_id" value="<?php echo esc_attr( $lookup_id ? $lookup_id : '' ); ?>">
+				<input id="as-content-log-lookup" type="text" name="lookup_id" value="<?php echo esc_attr( $lookup_raw ); ?>">
 				<?php submit_button( __( 'Find', 'as-content-stream' ), 'secondary', 'submit', false ); ?>
-				<?php if ( $lookup_id ) : ?>
+				<?php if ( $lookup_id || $show_last ) : ?>
 					<a class="button" href="<?php echo esc_url( $this->admin_url( array( 'tab' => 'log' ) ) ); ?>"><?php esc_html_e( 'Clear', 'as-content-stream' ); ?></a>
 				<?php endif; ?>
 			</form>
-			<?php if ( $lookup_id ) : ?>
+			<?php if ( $show_last ) : ?>
+				<p><?php esc_html_e( 'Showing the latest 100 completed processing jobs.', 'as-content-stream' ); ?></p>
+			<?php elseif ( $lookup_id ) : ?>
 				<p><?php esc_html_e( 'Showing completed processing jobs where that ID is source or destination.', 'as-content-stream' ); ?></p>
 			<?php endif; ?>
 		</div>
-		<table class="widefat striped as-content-queue" data-as-lazy-table="<?php echo esc_attr( $lookup_id ? 'log' : 'log_live' ); ?>" data-as-lookup-id="<?php echo esc_attr( $lookup_id ); ?>" data-as-offset="<?php echo esc_attr( count( $items ) ); ?>" data-as-limit="<?php echo esc_attr( $limit ); ?>" data-as-snapshot-id="<?php echo esc_attr( $snapshot_id ); ?>">
+		<table class="widefat striped as-content-queue"<?php if ( ! $show_last ) : ?> data-as-lazy-table="<?php echo esc_attr( $lookup_id ? 'log' : 'log_live' ); ?>" data-as-lookup-id="<?php echo esc_attr( $lookup_id ); ?>" data-as-offset="<?php echo esc_attr( count( $items ) ); ?>" data-as-limit="<?php echo esc_attr( $limit ); ?>" data-as-snapshot-id="<?php echo esc_attr( $snapshot_id ); ?>"<?php endif; ?>>
 			<thead>
 				<tr>
 					<th><?php esc_html_e( 'Job', 'as-content-stream' ); ?></th>
@@ -1200,7 +1209,7 @@ class AS_Content_Stream {
 			</thead>
 			<tbody>
 				<?php if ( empty( $items ) ) : ?>
-					<tr class="as-content-empty-row"><td colspan="14"><?php echo esc_html( $lookup_id ? __( 'No completed processing jobs found for that post ID.', 'as-content-stream' ) : __( 'Watching for completed processing jobs.', 'as-content-stream' ) ); ?></td></tr>
+					<tr class="as-content-empty-row"><td colspan="14"><?php echo esc_html( $show_last ? __( 'No completed processing jobs found.', 'as-content-stream' ) : ( $lookup_id ? __( 'No completed processing jobs found for that post ID.', 'as-content-stream' ) : __( 'Watching for completed processing jobs.', 'as-content-stream' ) ) ); ?></td></tr>
 				<?php endif; ?>
 				<?php $this->render_processing_item_rows( $items, true ); ?>
 			</tbody>
