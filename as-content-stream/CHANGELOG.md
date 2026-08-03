@@ -2,6 +2,11 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.93 - 2026-08-03
+
+- Allows action redirects to return to mapped destination site admin hosts after buttons such as Clean are clicked from that site's Content Stream screen.
+- Renames Sites/Post Types table headings from Stream As to Config and Wrong Status to Wrong Config.
+
 ## 0.1.92 - 2026-08-03
 
 - Returns admin-post actions to the current Content Stream screen after Run, Clean, Save, delete, and Discovery actions.

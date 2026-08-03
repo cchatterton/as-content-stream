@@ -668,12 +668,12 @@ class AS_Content_Stream {
 						<thead>
 							<tr>
 								<th><?php esc_html_e( 'Post Type', 'as-content-stream' ); ?></th>
-								<th><?php esc_html_e( 'Stream As', 'as-content-stream' ); ?></th>
+								<th><?php esc_html_e( 'Config', 'as-content-stream' ); ?></th>
 								<th><?php esc_html_e( 'Source Published', 'as-content-stream' ); ?></th>
 								<th><?php esc_html_e( 'Total In Language', 'as-content-stream' ); ?></th>
 								<th><?php esc_html_e( 'Mapped As Configured', 'as-content-stream' ); ?></th>
 								<th><?php esc_html_e( 'Mapped Off Config', 'as-content-stream' ); ?></th>
-								<th><?php esc_html_e( 'Wrong Status', 'as-content-stream' ); ?></th>
+								<th><?php esc_html_e( 'Wrong Config', 'as-content-stream' ); ?></th>
 								<th><?php esc_html_e( 'Wrong Language', 'as-content-stream' ); ?></th>
 								<th><?php esc_html_e( 'Local Content', 'as-content-stream' ); ?></th>
 								<th><?php esc_html_e( 'In Discovery', 'as-content-stream' ); ?></th>
@@ -777,7 +777,7 @@ class AS_Content_Stream {
 						<th><?php esc_html_e( 'Post Type', 'as-content-stream' ); ?></th>
 						<th><?php esc_html_e( 'Label', 'as-content-stream' ); ?></th>
 						<th><?php esc_html_e( 'Source Published', 'as-content-stream' ); ?></th>
-						<th><?php esc_html_e( 'Stream As', 'as-content-stream' ); ?></th>
+						<th><?php esc_html_e( 'Config', 'as-content-stream' ); ?></th>
 					</tr>
 				</thead>
 				<tbody>
@@ -7779,8 +7779,36 @@ class AS_Content_Stream {
 			$url = add_query_arg( $args, $url );
 		}
 
+		add_filter( 'allowed_redirect_hosts', array( $this, 'allow_network_admin_redirect_hosts' ) );
 		wp_safe_redirect( $url );
+		remove_filter( 'allowed_redirect_hosts', array( $this, 'allow_network_admin_redirect_hosts' ) );
 		exit;
+	}
+
+	/**
+	 * Allow Content Stream actions to return to mapped destination admin hosts.
+	 *
+	 * @param string[] $hosts Allowed redirect hosts.
+	 * @return string[]
+	 */
+	public function allow_network_admin_redirect_hosts( $hosts ) {
+		$hosts = is_array( $hosts ) ? $hosts : array();
+		$urls = array( network_admin_url(), get_admin_url( get_main_site_id() ) );
+
+		if ( is_multisite() ) {
+			foreach ( get_sites( array( 'number' => 0 ) ) as $site ) {
+				$urls[] = get_admin_url( (int) $site->blog_id );
+			}
+		}
+
+		foreach ( $urls as $url ) {
+			$host = wp_parse_url( $url, PHP_URL_HOST );
+			if ( $host ) {
+				$hosts[] = strtolower( $host );
+			}
+		}
+
+		return array_values( array_unique( $hosts ) );
 	}
 
 	/**

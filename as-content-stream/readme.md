@@ -1,7 +1,7 @@
 # Content Stream
 
 Author: AlphaSys
-Version: 0.1.92
+Version: 0.1.93
 Status: POC
 
 ## Purpose
@@ -20,6 +20,7 @@ Content Stream is a network-enabled WordPress plugin scaffold for multisite cont
 - Shows destination sites as internal tabs on Sites & WPML.
 - Links Sites & WPML post type rows to the destination site's filtered admin list.
 - Returns action buttons to the screen they were clicked from after Run, Clean, Save, and delete actions.
+- Allows action redirects back to mapped destination site admin hosts.
 - Adds CPT Settings for per-post-type include and stream status, defaulting every eligible post type to included and Draft until configured.
 - Queues delete work for active mapped destination content when a post type or WPML destination site falls out of scope.
 - Records create, update, and delete content actions in a visible global queue.
