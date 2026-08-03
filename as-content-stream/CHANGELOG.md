@@ -2,6 +2,10 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.91 - 2026-08-03
+
+- Splits Sites mapped off-config counts into Wrong Status and Wrong Language so mapped totals explain destination language gaps.
+
 ## 0.1.90 - 2026-08-03
 
 - Restores blank Stream Logs to watch only newly completed jobs while keeping `Last` as the latest-100 lookup mode.

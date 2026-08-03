@@ -673,6 +673,8 @@ class AS_Content_Stream {
 								<th><?php esc_html_e( 'Total In Language', 'as-content-stream' ); ?></th>
 								<th><?php esc_html_e( 'Mapped As Configured', 'as-content-stream' ); ?></th>
 								<th><?php esc_html_e( 'Mapped Off Config', 'as-content-stream' ); ?></th>
+								<th><?php esc_html_e( 'Wrong Status', 'as-content-stream' ); ?></th>
+								<th><?php esc_html_e( 'Wrong Language', 'as-content-stream' ); ?></th>
 								<th><?php esc_html_e( 'Local Content', 'as-content-stream' ); ?></th>
 								<th><?php esc_html_e( 'In Discovery', 'as-content-stream' ); ?></th>
 								<th><?php esc_html_e( 'Status', 'as-content-stream' ); ?></th>
@@ -706,6 +708,8 @@ class AS_Content_Stream {
 									<td><?php echo esc_html( isset( $row['total_in_language'] ) ? (int) $row['total_in_language'] : 0 ); ?></td>
 									<td><?php echo esc_html( isset( $row['mapped_configured'] ) ? (int) $row['mapped_configured'] : 0 ); ?></td>
 									<td><?php echo esc_html( isset( $row['mapped_off_config'] ) ? (int) $row['mapped_off_config'] : 0 ); ?></td>
+									<td><?php echo esc_html( isset( $row['mapped_wrong_status'] ) ? (int) $row['mapped_wrong_status'] : 0 ); ?></td>
+									<td><?php echo esc_html( isset( $row['mapped_wrong_language'] ) ? (int) $row['mapped_wrong_language'] : 0 ); ?></td>
 									<td><?php echo esc_html( isset( $row['local_content'] ) ? (int) $row['local_content'] : 0 ); ?></td>
 									<td><?php echo esc_html( isset( $row['in_discovery'] ) ? (int) $row['in_discovery'] : 0 ); ?></td>
 									<td><span class="as-content-row-status <?php echo esc_attr( $row_status_class ); ?>"><?php echo esc_html( $row_status_label ); ?></span></td>
@@ -6322,6 +6326,8 @@ class AS_Content_Stream {
 				'total_in_language'     => 0,
 				'mapped_configured'     => 0,
 				'mapped_off_config'     => 0,
+				'mapped_wrong_status'   => 0,
+				'mapped_wrong_language' => 0,
 				'mapped_published'      => 0,
 				'mapped_not_published'  => 0,
 				'local_content'         => 0,
@@ -6381,6 +6387,12 @@ class AS_Content_Stream {
 					$base['post_types'][ $post_type ]['mapped_configured']++;
 				} else {
 					$base['post_types'][ $post_type ]['mapped_off_config']++;
+					$language = $this->get_post_language_current_site( $target_post_id, $post_type );
+					if ( sanitize_key( $language ) !== sanitize_key( $target_language ) ) {
+						$base['post_types'][ $post_type ]['mapped_wrong_language']++;
+					} else {
+						$base['post_types'][ $post_type ]['mapped_wrong_status']++;
+					}
 				}
 			}
 		}
