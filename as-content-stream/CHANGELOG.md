@@ -2,6 +2,11 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.85 - 2026-08-03
+
+- Treats active Streaming Map rows as the durable Discovery truth so mapped source content is not re-queued on every Discovery run.
+- Narrows broken-map invalidation to missing, trashed, or wrong-post-type destination content.
+
 ## 0.1.84 - 2026-08-03
 
 - Refreshes the cleaned site/post-type health row after a per-CPT Clean action.

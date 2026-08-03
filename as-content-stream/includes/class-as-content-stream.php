@@ -2893,6 +2893,30 @@ class AS_Content_Stream {
 	}
 
 	/**
+	 * Check whether an active Streaming Map row still points at destination content.
+	 *
+	 * This must be called while switched to the destination blog.
+	 *
+	 * @param array<string,mixed>|object $mapped_row Active Streaming Map row.
+	 * @return bool
+	 */
+	private function active_map_row_has_existing_destination_current_site( $mapped_row ) {
+		$target_post_id = is_array( $mapped_row ) && isset( $mapped_row['target_post_id'] ) ? (int) $mapped_row['target_post_id'] : 0;
+		$source_post_type = is_array( $mapped_row ) && isset( $mapped_row['source_post_type'] ) ? sanitize_key( $mapped_row['source_post_type'] ) : '';
+
+		if ( is_object( $mapped_row ) ) {
+			$target_post_id = isset( $mapped_row->target_post_id ) ? (int) $mapped_row->target_post_id : $target_post_id;
+			$source_post_type = isset( $mapped_row->source_post_type ) ? sanitize_key( $mapped_row->source_post_type ) : $source_post_type;
+		}
+
+		$post = $target_post_id ? get_post( $target_post_id ) : null;
+
+		return $post instanceof WP_Post
+			&& 'trash' !== sanitize_key( $post->post_status )
+			&& sanitize_key( $post->post_type ) === $source_post_type;
+	}
+
+	/**
 	 * Get one active Streaming Map row for a source/destination target.
 	 *
 	 * @param int    $source_post_id Source post ID.
@@ -5997,7 +6021,7 @@ class AS_Content_Stream {
 
 			foreach ( $mapped_rows as $mapped_row ) {
 				$link_id = isset( $mapped_row['id'] ) ? (int) $mapped_row['id'] : 0;
-				if ( $link_id && ! $this->active_map_row_has_valid_destination_current_site( $mapped_row, $target_language ) ) {
+				if ( $link_id && ! $this->active_map_row_has_existing_destination_current_site( $mapped_row ) ) {
 					$broken_ids[] = $link_id;
 				}
 			}
@@ -6728,18 +6752,7 @@ class AS_Content_Stream {
 				return false;
 			}
 
-			$restore = get_current_blog_id() !== $blog_id;
-			if ( $restore ) {
-				switch_to_blog( $blog_id );
-			}
-
-			$is_valid = $this->active_map_row_has_valid_destination_current_site( $mapped_row, $target_language );
-
-			if ( $restore ) {
-				restore_current_blog();
-			}
-
-			if ( ! $is_valid ) {
+			if ( empty( $mapped_row['target_post_id'] ) ) {
 				return false;
 			}
 		}
