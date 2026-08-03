@@ -1,7 +1,7 @@
 # Content Stream
 
 Author: AlphaSys
-Version: 0.1.89
+Version: 0.1.90
 Status: POC
 
 ## Purpose
@@ -33,6 +33,7 @@ Content Stream is a network-enabled WordPress plugin scaffold for multisite cont
 - Displays Discovery Last Run in the site's local timezone.
 - Supports `Last` in the Log post ID lookup to show the latest 100 completed jobs.
 - Renames the admin tabs to Dashboard, Sites, Post Types, and Stream Logs.
+- Keeps blank Stream Logs in live-watch mode without loading existing completed jobs.
 - Shows a blocking overlay while Discovery or site cleanup runs.
 - Runs Discovery only on plugin activation or a manual Run Discovery click.
 - Runs manual Discovery through AJAX batches to avoid admin request timeouts.

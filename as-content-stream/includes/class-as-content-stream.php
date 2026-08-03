@@ -1163,7 +1163,7 @@ class AS_Content_Stream {
 		$show_last = 'last' === strtolower( trim( $lookup_raw ) );
 		$lookup_id = $show_last ? 0 : absint( $lookup_raw );
 		$limit = $show_last ? 100 : 50;
-		$snapshot_id = $lookup_id ? $this->get_processing_queue_snapshot_id( true, $lookup_id ) : 0;
+		$snapshot_id = $show_last ? 0 : $this->get_processing_queue_snapshot_id( true, $lookup_id );
 		$items = array();
 		if ( $show_last ) {
 			$items = $this->get_processing_queue_items( true, 0, $limit, 0, 0 );

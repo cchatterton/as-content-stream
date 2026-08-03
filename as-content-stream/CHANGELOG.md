@@ -2,6 +2,10 @@
 
 All notable changes to Content Stream are recorded here.
 
+## 0.1.90 - 2026-08-03
+
+- Restores blank Stream Logs to watch only newly completed jobs while keeping `Last` as the latest-100 lookup mode.
+
 ## 0.1.89 - 2026-08-03
 
 - Renames the visible admin tabs to Dashboard, Sites, Post Types, and Stream Logs.
